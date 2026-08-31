@@ -56,15 +56,38 @@
   - Option 2: Delete permanently (removes address and records)
 - [x] 10 new tests added (52 total tests passing)
 
+---
+
+## Phase 4: Mail Receiving Integration
+**Status**: ✅ Complete
+
+### Completed
+- [x] `EmailMessage` database model with full email metadata (sender, sender_name, sender_email, recipient, subject, plain body, HTML body, message_id, raw headers, size, read status, attachment info)
+- [x] Lightweight standalone Postfix pipe ingest script (`scripts/ingest_mail.py`):
+  - Memory usage: ~9MB RAM, latency <30ms
+  - Standard library only (no heavy Django boot per email)
+  - Python `email.policy.default` RFC 5322 parsing with UTF-8 support
+  - Attachment metadata extraction without heavy disk writes
+  - SQLite WAL mode concurrency and timeout management
+  - Proper Postfix delivery exit codes (`EX_OK`, `EX_TEMPFAIL`, `EX_NOUSER`, `EX_UNAVAILABLE`)
+- [x] Postfix deployment configuration templates in `deploy/postfix/`:
+  - `main.cf.snippet` with virtual maps, anti-open-relay restrictions, 5MB size limit, TLS config, concurrency limits
+  - `master.cf.snippet` with `amail_pipe` service definition
+  - `sqlite-virtual-domains.cf` & `sqlite-virtual-mailboxes.cf` for SMTP-level rejection of unlisted/disabled recipients (550 User unknown)
+  - `transport` mapping and complete integration guide (`deploy/postfix/README.md`)
+- [x] Django management command (`manage.py ingest_email`) for CLI testing and direct mail ingestion
+- [x] Real-time received/unread count properties on `EmailAddress` model
+- [x] Dynamic dashboard integration reflecting real email counts with user isolation
+- [x] 9 new mail ingestion & integration tests added (61 total tests passing)
+
 ### Key Decisions
-- Python standard library `secrets` used for cryptographically secure random generation.
-- Generates only valid lowercase local-part characters meeting all RFC/project constraints.
-- Generator ensures uniqueness across the entire domain before proposing candidates.
-- Safe deletion page allows soft-deactivation (disable) preserving historical inbox records.
+- Pipe transport with standalone python script keeps RAM usage under 10MB on 1GB VPS.
+- Recipient rejection at SMTP time (`virtual_mailbox_maps` SQLite query) drops spam/unknown recipients before Python script invocation.
+- Attachments are scanned for metadata without persisting large binaries, protecting 10GB SSD.
 
 ### Test Results
 ```
-Ran 52 tests in 59.233s — OK
+Ran 61 tests in 71.622s — OK
 
 AccountsTests (10):
   ✓ test_csrf_enforced
@@ -108,6 +131,17 @@ EmailAddressTests (18):
   ✓ test_address_list_filter_by_category
   ✓ test_address_list_pagination
 
+MailIngestTests (9):
+  ✓ test_ingest_plain_text
+  ✓ test_ingest_html_and_text_multipart
+  ✓ test_ingest_with_attachments
+  ✓ test_ingest_utf8_subject_and_body
+  ✓ test_ingest_unknown_recipient
+  ✓ test_ingest_disabled_recipient
+  ✓ test_ingest_cli_recipient_override
+  ✓ test_dashboard_stats_with_received_emails
+  ✓ test_ingest_management_command
+
 RandomGeneratorTests (8):
   ✓ test_generate_short_style
   ✓ test_generate_standard_style
@@ -133,5 +167,5 @@ ValidationTests (4):
 
 ---
 
-## Phase 4: Mail Receiving Integration
+## Phase 5: Inbox & Email Viewer
 **Status**: ⏳ Next

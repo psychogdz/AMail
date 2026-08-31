@@ -1,0 +1,5 @@
+# AMail Transport Mapping
+# /etc/postfix/transport
+
+viomet.online   amail_pipe:
+.viomet.online  amail_pipe:

@@ -4,8 +4,10 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+
 def get_default_domain():
-    return getattr(settings, 'EMAIL_DOMAIN', 'localhost')
+    return getattr(settings, 'EMAIL_DOMAIN', 'viomet.online')
+
 
 class Category(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='categories')
@@ -20,6 +22,7 @@ class Category(models.Model):
 
     def __str__(self):
         return self.name
+
 
 class EmailAddress(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='email_addresses')
@@ -44,8 +47,38 @@ class EmailAddress(models.Model):
         
     @property
     def received_count(self):
-        return 0
+        return self.emails.count()
 
     @property
     def unread_count(self):
-        return 0
+        return self.emails.filter(is_read=False).count()
+
+
+class EmailMessage(models.Model):
+    email_address = models.ForeignKey(
+        EmailAddress,
+        on_delete=models.CASCADE,
+        related_name='emails'
+    )
+    recipient = models.CharField(max_length=255, db_index=True)
+    sender = models.CharField(max_length=255)
+    sender_email = models.CharField(max_length=255, blank=True)
+    sender_name = models.CharField(max_length=255, blank=True)
+    subject = models.CharField(max_length=998, blank=True, default='(No Subject)')
+    body_plain = models.TextField(blank=True)
+    body_html = models.TextField(blank=True)
+    message_id = models.CharField(max_length=255, blank=True, db_index=True)
+    raw_headers = models.TextField(blank=True)
+    size_bytes = models.PositiveIntegerField(default=0)
+    is_read = models.BooleanField(default=False, db_index=True)
+    has_attachments = models.BooleanField(default=False)
+    attachments_info = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'received email'
+        verbose_name_plural = 'received emails'
+
+    def __str__(self):
+        return f"{self.subject} ({self.recipient})"

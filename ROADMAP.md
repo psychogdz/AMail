@@ -21,14 +21,14 @@
 - Generate Again functionality
 - Uniqueness validation
 
-## Phase 4: Mail Receiving Integration ⬅️ Next
+## Phase 4: Mail Receiving Integration ✅
 - Postfix configuration
 - Lightweight ingest script (ingest_mail.py)
 - SQLite virtual mailbox maps
 - SMTP-level recipient rejection
 - Email parsing and storage
 
-## Phase 5: Inbox & Email Viewer
+## Phase 5: Inbox & Email Viewer ⬅️ Next
 - Inbox interface
 - Email list with pagination
 - Email content viewer

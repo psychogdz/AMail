@@ -1,0 +1,6 @@
+# Postfix SQLite map for recipient validation
+# Rejects invalid or disabled addresses at the SMTP level (550 User unknown)
+# Path: /etc/postfix/sqlite-virtual-mailboxes.cf
+
+dbpath = /opt/amail/db.sqlite3
+query = SELECT 1 FROM mailboxes_emailaddress WHERE (lower(local_part) || '@' || lower(domain)) = lower('%s') AND is_active=1 LIMIT 1
