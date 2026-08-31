@@ -3,6 +3,11 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from django.db import connection
 from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.core.cache import cache
+from django.utils import timezone
+from datetime import timedelta
+import io
 import re
 import os
 import tempfile
@@ -13,6 +18,7 @@ from apps.mailboxes.generator import (
     generate_raw_candidate,
     GENERATOR_STYLES,
 )
+from apps.core.ratelimit import check_rate_limit, ratelimit
 from scripts.ingest_mail import (
     ingest,
     parse_email_message,
@@ -697,6 +703,161 @@ class InboxViewTests(TestCase):
         })
         self.assertEqual(response.status_code, 302)
         self.assertTrue(EmailMessage.objects.filter(pk=self.email_user2.pk).exists())
+
+
+class SecurityAndOptimizationTests(TestCase):
+    def setUp(self):
+        cache.clear()
+        self.user1 = User.objects.create_user(username='secuser1', password='password123')
+        self.user2 = User.objects.create_user(username='secuser2', password='password123')
+        self.client = Client()
+        self.addr1 = EmailAddress.objects.create(user=self.user1, local_part='secaddr1')
+        self.addr2 = EmailAddress.objects.create(user=self.user2, local_part='secaddr2')
+
+    def test_cleanup_emails_default(self):
+        now = timezone.now()
+        # Old email (40 days ago)
+        msg_old = EmailMessage.objects.create(
+            email_address=self.addr1,
+            recipient='secaddr1@viomet.online',
+            subject='Old Message',
+            is_read=True
+        )
+        EmailMessage.objects.filter(pk=msg_old.pk).update(created_at=now - timedelta(days=40))
+
+        # Recent email (5 days ago)
+        msg_recent = EmailMessage.objects.create(
+            email_address=self.addr1,
+            recipient='secaddr1@viomet.online',
+            subject='Recent Message',
+            is_read=True
+        )
+        EmailMessage.objects.filter(pk=msg_recent.pk).update(created_at=now - timedelta(days=5))
+
+        call_command('cleanup_emails', days=30)
+        self.assertFalse(EmailMessage.objects.filter(pk=msg_old.pk).exists())
+        self.assertTrue(EmailMessage.objects.filter(pk=msg_recent.pk).exists())
+
+    def test_cleanup_emails_keep_unread(self):
+        now = timezone.now()
+        # Old read email
+        msg_old_read = EmailMessage.objects.create(
+            email_address=self.addr1,
+            recipient='secaddr1@viomet.online',
+            subject='Old Read',
+            is_read=True
+        )
+        EmailMessage.objects.filter(pk=msg_old_read.pk).update(created_at=now - timedelta(days=40))
+
+        # Old unread email
+        msg_old_unread = EmailMessage.objects.create(
+            email_address=self.addr1,
+            recipient='secaddr1@viomet.online',
+            subject='Old Unread',
+            is_read=False
+        )
+        EmailMessage.objects.filter(pk=msg_old_unread.pk).update(created_at=now - timedelta(days=40))
+
+        call_command('cleanup_emails', days=30, keep_unread=True)
+        self.assertFalse(EmailMessage.objects.filter(pk=msg_old_read.pk).exists())
+        self.assertTrue(EmailMessage.objects.filter(pk=msg_old_unread.pk).exists())
+
+    def test_cleanup_emails_user_filter(self):
+        now = timezone.now()
+        msg_user1 = EmailMessage.objects.create(
+            email_address=self.addr1,
+            recipient='secaddr1@viomet.online',
+            subject='User1 Old'
+        )
+        EmailMessage.objects.filter(pk=msg_user1.pk).update(created_at=now - timedelta(days=40))
+
+        msg_user2 = EmailMessage.objects.create(
+            email_address=self.addr2,
+            recipient='secaddr2@viomet.online',
+            subject='User2 Old'
+        )
+        EmailMessage.objects.filter(pk=msg_user2.pk).update(created_at=now - timedelta(days=40))
+
+        call_command('cleanup_emails', days=30, user='secuser1')
+        self.assertFalse(EmailMessage.objects.filter(pk=msg_user1.pk).exists())
+        self.assertTrue(EmailMessage.objects.filter(pk=msg_user2.pk).exists())
+
+    def test_cleanup_emails_dry_run(self):
+        now = timezone.now()
+        msg_old = EmailMessage.objects.create(
+            email_address=self.addr1,
+            recipient='secaddr1@viomet.online',
+            subject='Dry Run Old'
+        )
+        EmailMessage.objects.filter(pk=msg_old.pk).update(created_at=now - timedelta(days=40))
+
+        call_command('cleanup_emails', days=30, dry_run=True)
+        self.assertTrue(EmailMessage.objects.filter(pk=msg_old.pk).exists())
+
+    def test_cleanup_emails_invalid_days_and_user(self):
+        with self.assertRaises(CommandError):
+            call_command('cleanup_emails', days=-1)
+
+        with self.assertRaises(CommandError):
+            call_command('cleanup_emails', user='nonexistent_user_123')
+
+    def test_cleanup_emails_vacuum(self):
+        out = io.StringIO()
+        call_command('cleanup_emails', days=30, vacuum=True, stdout=out)
+        self.assertIn('No expired emails found', out.getvalue())
+
+    def test_check_storage_command(self):
+        out = io.StringIO()
+        call_command('check_storage', stdout=out)
+        output = out.getvalue()
+        self.assertIn('AMail Storage & Health Diagnostics', output)
+        self.assertIn('Table Statistics', output)
+        self.assertIn('Stored Emails', output)
+
+    def test_ratelimit_utility(self):
+        cache.clear()
+        is_limited, retry_after = check_rate_limit('test_key', limit=2, period=10)
+        self.assertFalse(is_limited)
+        self.assertEqual(retry_after, 0)
+
+        is_limited, retry_after = check_rate_limit('test_key', limit=2, period=10)
+        self.assertFalse(is_limited)
+
+        is_limited, retry_after = check_rate_limit('test_key', limit=2, period=10)
+        self.assertTrue(is_limited)
+        self.assertGreater(retry_after, 0)
+
+    def test_ratelimit_generator_api_enforced(self):
+        cache.clear()
+        self.client.login(username='secuser1', password='password123')
+
+        # Limit is 60/min. Make 60 requests
+        for _ in range(60):
+            res = self.client.get(reverse('mailboxes:address_generate_random'))
+            self.assertEqual(res.status_code, 200)
+
+        # 61st request should be blocked
+        res_blocked = self.client.get(reverse('mailboxes:address_generate_random'), HTTP_X_REQUESTED_WITH='XMLHttpRequest')
+        self.assertEqual(res_blocked.status_code, 429)
+        self.assertIn('Retry-After', res_blocked.headers)
+
+    def test_ratelimit_login_enforced(self):
+        cache.clear()
+        # Limit is 10/min for POST
+        for _ in range(10):
+            res = self.client.post(reverse('accounts:login'), {
+                'username': 'secuser1',
+                'password': 'wrongpassword'
+            })
+            self.assertEqual(res.status_code, 200)
+
+        # 11th POST request should be blocked
+        res_blocked = self.client.post(reverse('accounts:login'), {
+            'username': 'secuser1',
+            'password': 'wrongpassword'
+        })
+        self.assertEqual(res_blocked.status_code, 429)
+        self.assertIn('Retry-After', res_blocked.headers)
 
 
 class ValidationTests(TestCase):

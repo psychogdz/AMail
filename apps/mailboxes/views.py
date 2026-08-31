@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import JsonResponse, HttpResponse
+from apps.core.ratelimit import ratelimit
 from .models import Category, EmailAddress, EmailMessage, get_default_domain
 from .forms import CategoryForm, EmailAddressForm, MoveAddressForm
 from .generator import generate_random_local_part, GENERATOR_STYLES
@@ -93,6 +94,7 @@ def address_list(request):
 
 
 @login_required
+@ratelimit(key_prefix='address_create', limit=30, period=60, methods=('POST',))
 def address_create(request):
     domain = get_default_domain()
     
@@ -126,6 +128,7 @@ def address_create(request):
 
 
 @login_required
+@ratelimit(key_prefix='address_generate', limit=60, period=60)
 def address_generate_api(request):
     """
     JSON API endpoint for generating random email local_part candidates on demand.

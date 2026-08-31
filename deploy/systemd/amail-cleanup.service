@@ -1,0 +1,15 @@
+[Unit]
+Description=AMail Daily Retention Cleanup & VACUUM
+After=network.target
+
+[Service]
+Type=oneshot
+User=amail
+Group=amail
+WorkingDirectory=/var/www/amail
+EnvironmentFile=/var/www/amail/.env
+ExecStart=/var/www/amail/venv/bin/python manage.py cleanup_emails --days 30 --vacuum
+StandardOutput=journal
+StandardError=journal
+Nice=19
+IOSchedulingClass=idle

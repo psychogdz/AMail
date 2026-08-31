@@ -107,14 +107,36 @@
 - [x] Enabled "Inbox" sidebar navigation link across the dashboard
 - [x] 19 new inbox & email viewer unit and integration tests added (80 total tests passing)
 
+---
+
+## Phase 6: Security & Optimization
+**Status**: ✅ Complete
+
+### Completed
+- [x] Sliding window in-memory/cache rate limiter (`apps/core/ratelimit.py`):
+  - Zero external dependency (runs on Django `LocMemCache`, ~0MB overhead)
+  - Applied to Login POST attempts (`10/min`), Address Generation API (`60/min`), and Address Creation (`30/min`)
+  - Returns HTTP 429 Too Many Requests with `Retry-After` header
+- [x] Automatic retention email cleanup command (`manage.py cleanup_emails`):
+  - Supports `--days <N>`, `--keep-unread`, `--user <username>`, `--dry-run`, and `--vacuum`
+  - Reclaims SQLite disk space via `VACUUM`
+- [x] Storage diagnostics command (`manage.py check_storage`):
+  - Reports SQLite page size, page count, free pages, DB file size, table counts, and VPS mount disk utilization
+- [x] Database indexes optimized for low-resource VPS (`apps/mailboxes/models.py`):
+  - Composite indexes on `(local_part, domain)`, `(user, is_active)`, `(email_address, is_read)`, `(email_address, -created_at)`, `(user, name)`
+- [x] Linux background automation definitions (`deploy/systemd/`):
+  - `amail-cleanup.service` (oneshot job running cleanup + vacuum)
+  - `amail-cleanup.timer` (daily 03:30 UTC trigger with randomized jitter)
+  - `deploy/systemd/README.md` documentation
+- [x] 10 new security & optimization unit tests added (90 total tests passing)
+
 ### Key Decisions
-- HTML emails rendered in an isolated `iframe` with `sandbox="allow-popups"` and strict CSP (`default-src 'none'`) preventing XSS attacks while safely rendering email styling and images.
-- `<base target="_blank">` injected automatically so links in emails open in new tabs without navigating the app window.
-- Bulk operations enforce strict user ownership (`email_address__user = request.user`) preventing unauthorized multi-record updates.
+- Uses standard Linux systemd timers instead of running long-lived background daemons (Celery/Redis), preserving ~150MB+ of RAM.
+- Added compound indexes to eliminate full table scans during inbox filtering and Postfix delivery lookups.
 
 ### Test Results
 ```
-Ran 80 tests in 98.628s — OK
+Ran 90 tests in 112.033s — OK
 
 AccountsTests (10):
   ✓ test_csrf_enforced
@@ -206,6 +228,18 @@ AddressDeleteTests (4):
   ✓ test_address_delete_post_action_disable
   ✓ test_address_delete_other_user
 
+SecurityAndOptimizationTests (10):
+  ✓ test_cleanup_emails_default
+  ✓ test_cleanup_emails_keep_unread
+  ✓ test_cleanup_emails_user_filter
+  ✓ test_cleanup_emails_dry_run
+  ✓ test_cleanup_emails_invalid_days_and_user
+  ✓ test_cleanup_emails_vacuum
+  ✓ test_check_storage_command
+  ✓ test_ratelimit_utility
+  ✓ test_ratelimit_generator_api_enforced
+  ✓ test_ratelimit_login_enforced
+
 ValidationTests (4):
   ✓ test_valid_local_parts
   ✓ test_invalid_local_parts
@@ -215,5 +249,5 @@ ValidationTests (4):
 
 ---
 
-## Phase 6: Security & Optimization
+## Phase 7: Deployment & Production Hardening
 **Status**: ⏳ Next

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run AMail Daily Retention Cleanup & VACUUM Timer
+Requires=amail-cleanup.service
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+RandomizedDelaySec=900
+Persistent=true
+
+[Install]
+WantedBy=timers.target
