@@ -1,11 +1,13 @@
+import html
+import re
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db.models import Count
-from django.http import JsonResponse
-from .models import Category, EmailAddress, get_default_domain
+from django.db.models import Count, Q
+from django.http import JsonResponse, HttpResponse
+from .models import Category, EmailAddress, EmailMessage, get_default_domain
 from .forms import CategoryForm, EmailAddressForm, MoveAddressForm
 from .generator import generate_random_local_part, GENERATOR_STYLES
 
@@ -202,3 +204,171 @@ def address_delete(request, pk):
     return render(request, 'mailboxes/address_delete.html', {
         'address': address
     })
+
+
+# ==========================================
+# INBOX & EMAIL VIEWER VIEWS
+# ==========================================
+
+@login_required
+def inbox_list(request):
+    """
+    Inbox view showing list of received emails with filtering, search, and pagination.
+    """
+    queryset = EmailMessage.objects.filter(email_address__user=request.user).select_related('email_address', 'email_address__category')
+
+    # Filter by category
+    category_id = request.GET.get('category')
+    if category_id:
+        queryset = queryset.filter(email_address__category_id=category_id)
+
+    # Filter by specific email address
+    address_id = request.GET.get('address')
+    if address_id:
+        queryset = queryset.filter(email_address_id=address_id)
+
+    # Filter by read status
+    status_filter = request.GET.get('status')
+    if status_filter == 'unread':
+        queryset = queryset.filter(is_read=False)
+    elif status_filter == 'read':
+        queryset = queryset.filter(is_read=True)
+
+    # Search filter
+    search_query = request.GET.get('q', '').strip()
+    if search_query:
+        queryset = queryset.filter(
+            Q(subject__icontains=search_query) |
+            Q(sender__icontains=search_query) |
+            Q(sender_email__icontains=search_query) |
+            Q(sender_name__icontains=search_query) |
+            Q(recipient__icontains=search_query) |
+            Q(body_plain__icontains=search_query)
+        )
+
+    paginator = Paginator(queryset, 20)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    categories = Category.objects.filter(user=request.user)
+    addresses = EmailAddress.objects.filter(user=request.user)
+    total_unread = EmailMessage.objects.filter(email_address__user=request.user, is_read=False).count()
+
+    return render(request, 'mailboxes/inbox.html', {
+        'page_obj': page_obj,
+        'categories': categories,
+        'addresses': addresses,
+        'current_category': category_id,
+        'current_address': address_id,
+        'current_status': status_filter,
+        'search_query': search_query,
+        'total_unread': total_unread,
+    })
+
+
+@login_required
+def email_detail(request, pk):
+    """
+    Detailed email viewer. Automatically marks the email as read upon viewing.
+    """
+    email_obj = get_object_or_404(
+        EmailMessage.objects.select_related('email_address', 'email_address__category'),
+        pk=pk,
+        email_address__user=request.user
+    )
+
+    if not email_obj.is_read:
+        email_obj.is_read = True
+        email_obj.save(update_fields=['is_read'])
+
+    return render(request, 'mailboxes/email_detail.html', {
+        'email': email_obj,
+    })
+
+
+@login_required
+def email_html_raw(request, pk):
+    """
+    Renders raw email HTML inside a heavily sandboxed response.
+    Applies strict Content Security Policy to prevent XSS / script execution.
+    """
+    email_obj = get_object_or_404(EmailMessage, pk=pk, email_address__user=request.user)
+    
+    html_content = email_obj.body_html.strip()
+    if not html_content:
+        # Fallback to escaped plain text wrapped in pre
+        escaped_plain = html.escape(email_obj.body_plain)
+        html_content = f"<!DOCTYPE html><html><head><meta charset='utf-8'><style>body {{ font-family: monospace; white-space: pre-wrap; padding: 16px; color: #333; background: #fff; }}</style></head><body>{escaped_plain}</body></html>"
+    else:
+        # Inject <base target="_blank"> so external links open safely in a new tab
+        if '<head>' in html_content.lower():
+            html_content = re.sub(r'(<head[^>]*>)', r'\1<base target="_blank">', html_content, count=1, flags=re.IGNORECASE)
+        else:
+            html_content = '<base target="_blank">' + html_content
+
+    response = HttpResponse(html_content, content_type='text/html; charset=utf-8')
+    # Strict CSP preventing any scripts or navigation hijacking
+    response['Content-Security-Policy'] = "default-src 'none'; style-src 'unsafe-inline' https: http: data:; img-src data: https: http: cid:; font-src data: https: http:; media-src data: https: http:;"
+    response['X-Content-Type-Options'] = 'nosniff'
+    response['X-Frame-Options'] = 'SAMEORIGIN'
+    return response
+
+
+@login_required
+@require_POST
+def email_toggle_read(request, pk):
+    """
+    Toggle read / unread status of an individual email.
+    """
+    email_obj = get_object_or_404(EmailMessage, pk=pk, email_address__user=request.user)
+    email_obj.is_read = not email_obj.is_read
+    email_obj.save(update_fields=['is_read'])
+    
+    status_label = "read" if email_obj.is_read else "unread"
+    messages.success(request, f"Message marked as {status_label}.")
+    return redirect(request.META.get('HTTP_REFERER', 'mailboxes:inbox'))
+
+
+@login_required
+@require_POST
+def email_delete(request, pk):
+    """
+    Delete an individual email.
+    """
+    email_obj = get_object_or_404(EmailMessage, pk=pk, email_address__user=request.user)
+    subject = email_obj.subject
+    email_obj.delete()
+    messages.success(request, f"Message '{subject}' deleted successfully.")
+    return redirect('mailboxes:inbox')
+
+
+@login_required
+@require_POST
+def email_bulk_action(request):
+    """
+    Handle bulk actions: mark selected emails as read, mark as unread, or delete.
+    """
+    action = request.POST.get('action')
+    email_ids = request.POST.getlist('selected_emails')
+
+    if not email_ids:
+        messages.warning(request, "No messages selected.")
+        return redirect(request.META.get('HTTP_REFERER', 'mailboxes:inbox'))
+
+    # Strict user isolation: filter by current user
+    queryset = EmailMessage.objects.filter(id__in=email_ids, email_address__user=request.user)
+    count = queryset.count()
+
+    if action == 'mark_read':
+        queryset.update(is_read=True)
+        messages.success(request, f"{count} message(s) marked as read.")
+    elif action == 'mark_unread':
+        queryset.update(is_read=False)
+        messages.success(request, f"{count} message(s) marked as unread.")
+    elif action == 'delete':
+        queryset.delete()
+        messages.success(request, f"{count} message(s) deleted.")
+    else:
+        messages.error(request, "Invalid action.")
+
+    return redirect(request.META.get('HTTP_REFERER', 'mailboxes:inbox'))

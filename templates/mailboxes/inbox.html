@@ -1,0 +1,274 @@
+{% extends 'base.html' %}
+
+{% block title %}Inbox | AMail{% endblock %}
+
+{% block content %}
+<style>
+    .inbox-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    .search-filter-bar {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+    .search-form {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+    }
+    .filters-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+    .filter-pill {
+        padding: 4px 12px;
+        border-radius: 999px;
+        text-decoration: none;
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
+        background: var(--bg-tertiary);
+        font-size: 0.85rem;
+        transition: all var(--transition);
+    }
+    .filter-pill:hover {
+        color: var(--text-primary);
+        border-color: var(--border-focus);
+    }
+    .filter-pill.active {
+        background-color: var(--accent);
+        color: white;
+        border-color: var(--accent);
+    }
+    .bulk-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 8px 16px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    .email-row {
+        cursor: pointer;
+        transition: background-color var(--transition);
+    }
+    .email-row:hover {
+        background-color: var(--bg-hover) !important;
+    }
+    .email-row.unread {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .email-row.unread td {
+        color: var(--text-primary);
+    }
+    .email-row.read {
+        color: var(--text-secondary);
+    }
+    .unread-indicator {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: var(--accent);
+        margin-right: 6px;
+    }
+    .action-form { display: inline; margin: 0; padding: 0; }
+    .email-subject {
+        color: var(--text-primary);
+        text-decoration: none;
+    }
+    .email-subject:hover {
+        text-decoration: underline;
+    }
+</style>
+
+<div class="inbox-header">
+    <div class="flex" style="align-items: center; gap: 12px;">
+        <h1 style="margin: 0;">Inbox</h1>
+        {% if total_unread > 0 %}
+        <span class="badge badge-success">{{ total_unread }} unread</span>
+        {% endif %}
+    </div>
+    
+    <div class="flex" style="gap: 8px;">
+        <a href="{% url 'mailboxes:inbox' %}" class="btn btn-ghost btn-sm">🔄 Refresh</a>
+        <a href="{% url 'mailboxes:address_create' %}" class="btn btn-primary btn-sm">+ New Address</a>
+    </div>
+</div>
+
+<div class="search-filter-bar">
+    <!-- Search Bar -->
+    <form method="GET" action="{% url 'mailboxes:inbox' %}" class="search-form">
+        {% if current_category %}<input type="hidden" name="category" value="{{ current_category }}">{% endif %}
+        {% if current_address %}<input type="hidden" name="address" value="{{ current_address }}">{% endif %}
+        {% if current_status %}<input type="hidden" name="status" value="{{ current_status }}">{% endif %}
+        <input type="text" name="q" class="form-input" placeholder="Search by subject, sender, body, or recipient..." value="{{ search_query }}" style="flex-grow: 1;">
+        <button type="submit" class="btn btn-primary">Search</button>
+        {% if search_query %}
+        <a href="{% url 'mailboxes:inbox' %}{% if current_category %}?category={{ current_category }}{% endif %}" class="btn btn-ghost">Clear</a>
+        {% endif %}
+    </form>
+
+    <!-- Filter Pills -->
+    <div class="filters-row">
+        <span class="text-secondary" style="font-size: 0.85rem; font-weight: 500;">Status:</span>
+        <a href="{% url 'mailboxes:inbox' %}{% if search_query %}?q={{ search_query }}{% endif %}" class="filter-pill {% if not current_status %}active{% endif %}">All</a>
+        <a href="{% url 'mailboxes:inbox' %}?status=unread{% if search_query %}&q={{ search_query }}{% endif %}" class="filter-pill {% if current_status == 'unread' %}active{% endif %}">Unread</a>
+        <a href="{% url 'mailboxes:inbox' %}?status=read{% if search_query %}&q={{ search_query }}{% endif %}" class="filter-pill {% if current_status == 'read' %}active{% endif %}">Read</a>
+
+        {% if categories %}
+        <span class="text-secondary ml-2" style="font-size: 0.85rem; font-weight: 500;">Category:</span>
+        {% for cat in categories %}
+        <a href="{% url 'mailboxes:inbox' %}?category={{ cat.pk }}{% if current_status %}&status={{ current_status }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" 
+           class="filter-pill {% if current_category == cat.pk|stringformat:'s' %}active{% endif %}">
+           {{ cat.name }}
+        </a>
+        {% endfor %}
+        {% endif %}
+    </div>
+</div>
+
+{% if page_obj.paginator.count > 0 %}
+<form method="POST" action="{% url 'mailboxes:email_bulk_action' %}" id="bulkForm">
+    {% csrf_token %}
+
+    <div class="bulk-bar">
+        <div class="flex" style="align-items: center; gap: 8px;">
+            <input type="checkbox" id="selectAll" onclick="toggleSelectAll(this)" style="cursor: pointer;">
+            <label for="selectAll" style="font-size: 0.85rem; cursor: pointer; color: var(--text-secondary);">Select All</label>
+        </div>
+
+        <div class="flex" style="gap: 8px;">
+            <button type="submit" name="action" value="mark_read" class="btn btn-ghost btn-sm" title="Mark selected as read">
+                ✓ Mark Read
+            </button>
+            <button type="submit" name="action" value="mark_unread" class="btn btn-ghost btn-sm" title="Mark selected as unread">
+                ✉ Mark Unread
+            </button>
+            <button type="submit" name="action" value="delete" class="btn btn-danger btn-sm" onclick="return confirm('Delete selected emails?');" title="Delete selected">
+                🗑 Delete
+            </button>
+        </div>
+    </div>
+
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div class="table-responsive">
+            <table class="w-full" style="text-align: left; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color); background-color: var(--bg-tertiary);">
+                        <th style="padding: 12px 16px; width: 36px;"></th>
+                        <th style="padding: 12px 16px;">Sender</th>
+                        <th style="padding: 12px 16px;">Subject</th>
+                        <th style="padding: 12px 16px;">Recipient</th>
+                        <th style="padding: 12px 16px;">Date</th>
+                        <th style="padding: 12px 16px; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for email in page_obj %}
+                    <tr class="email-row {% if email.is_read %}read{% else %}unread{% endif %}" style="border-bottom: 1px solid var(--border-color);">
+                        <td style="padding: 12px 16px;" onclick="event.stopPropagation();">
+                            <input type="checkbox" name="selected_emails" value="{{ email.pk }}" class="email-checkbox" style="cursor: pointer;">
+                        </td>
+                        <td style="padding: 12px 16px;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
+                            {% if not email.is_read %}
+                            <span class="unread-indicator" title="Unread"></span>
+                            {% endif %}
+                            {{ email.sender_name|default:email.sender|truncatechars:28 }}
+                        </td>
+                        <td style="padding: 12px 16px;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
+                            <a href="{% url 'mailboxes:email_detail' pk=email.pk %}" class="email-subject">
+                                {{ email.subject|truncatechars:50 }}
+                            </a>
+                            {% if email.has_attachments %}
+                            <span title="Has attachments" style="font-size: 0.9rem; margin-left: 4px;">📎</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 12px 16px;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
+                            <span class="badge" style="font-family: monospace; font-size: 0.8rem; background: var(--bg-tertiary); color: var(--text-primary);">
+                                {{ email.recipient }}
+                            </span>
+                        </td>
+                        <td style="padding: 12px 16px; white-space: nowrap; font-size: 0.85rem;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
+                            {{ email.created_at|date:'M d, H:i' }}
+                        </td>
+                        <td style="padding: 12px 16px; text-align: right; white-space: nowrap;" onclick="event.stopPropagation();">
+                            <form method="POST" action="{% url 'mailboxes:email_toggle_read' pk=email.pk %}" class="action-form">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-ghost btn-sm" title="{% if email.is_read %}Mark as unread{% else %}Mark as read{% endif %}">
+                                    {% if email.is_read %}✉{% else %}✓{% endif %}
+                                </button>
+                            </form>
+                            <form method="POST" action="{% url 'mailboxes:email_delete' pk=email.pk %}" class="action-form" onsubmit="return confirm('Delete this email?');">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-danger btn-sm" title="Delete">🗑</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</form>
+
+<!-- Pagination -->
+{% if page_obj.has_other_pages %}
+<div class="pagination mt-lg">
+    {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">&laquo; Prev</a>
+    {% endif %}
+    
+    {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+        <span class="page-link active">{{ num }}</span>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+        <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">{{ num }}</a>
+        {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">Next &raquo;</a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state" style="text-align: center; padding: 48px; border: 1px dashed var(--border-color); border-radius: var(--radius-md); margin-top: 24px;">
+    <div style="font-size: 3rem; margin-bottom: 16px;">📭</div>
+    <h3 style="margin-bottom: 8px;">No emails found</h3>
+    <p class="text-secondary" style="margin-bottom: 24px;">
+        {% if search_query %}
+        No messages matched your search query "{{ search_query }}".
+        {% else %}
+        Your inbox is currently empty. Incoming emails sent to your active addresses will appear here.
+        {% endif %}
+    </p>
+    {% if search_query or current_status or current_category %}
+    <a href="{% url 'mailboxes:inbox' %}" class="btn btn-ghost">Reset Filters</a>
+    {% else %}
+    <a href="{% url 'mailboxes:address_create' %}" class="btn btn-primary">Create an Email Address</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<script>
+function toggleSelectAll(master) {
+    const checkboxes = document.querySelectorAll('.email-checkbox');
+    checkboxes.forEach(cb => cb.checked = master.checked);
+}
+</script>
+{% endblock %}

@@ -1,4 +1,4 @@
-from django.test import TestCase, TransactionTestCase, Client
+from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.urls import reverse
 from django.db import connection
@@ -504,6 +504,199 @@ class MailIngestTests(TestCase):
         finally:
             if os.path.exists(temp_name):
                 os.remove(temp_name)
+
+
+class InboxViewTests(TestCase):
+    def setUp(self):
+        self.user1 = User.objects.create_user(username='inboxuser1', password='password')
+        self.user2 = User.objects.create_user(username='inboxuser2', password='password')
+        self.client = Client()
+        self.client.login(username='inboxuser1', password='password')
+
+        self.category1 = Category.objects.create(user=self.user1, name='Streaming')
+        self.addr1 = EmailAddress.objects.create(user=self.user1, category=self.category1, local_part='netflix')
+        self.addr2 = EmailAddress.objects.create(user=self.user1, local_part='github')
+
+        self.addr_user2 = EmailAddress.objects.create(user=self.user2, local_part='other')
+
+        self.email1 = EmailMessage.objects.create(
+            email_address=self.addr1,
+            recipient='netflix@viomet.online',
+            sender='Netflix <info@netflix.com>',
+            sender_name='Netflix',
+            sender_email='info@netflix.com',
+            subject='Your subscription receipt',
+            body_plain='Thank you for your payment.',
+            body_html='<h1>Thank you for your payment.</h1>',
+            is_read=False
+        )
+        self.email2 = EmailMessage.objects.create(
+            email_address=self.addr2,
+            recipient='github@viomet.online',
+            sender='GitHub <notifications@github.com>',
+            sender_name='GitHub',
+            sender_email='notifications@github.com',
+            subject='Security alert',
+            body_plain='A new SSH key was added.',
+            is_read=True
+        )
+        self.email_user2 = EmailMessage.objects.create(
+            email_address=self.addr_user2,
+            recipient='other@viomet.online',
+            sender='Secret Sender',
+            subject='Secret Topic',
+            body_plain='Secret Message',
+            is_read=False
+        )
+
+    def test_inbox_requires_auth(self):
+        self.client.logout()
+        response = self.client.get(reverse('mailboxes:inbox'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response.url)
+
+    def test_inbox_shows_user_emails_only(self):
+        response = self.client.get(reverse('mailboxes:inbox'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Your subscription receipt')
+        self.assertContains(response, 'Security alert')
+        self.assertNotContains(response, 'Secret Topic')
+
+    def test_inbox_filter_by_category(self):
+        response = self.client.get(reverse('mailboxes:inbox'), {'category': self.category1.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Your subscription receipt')
+        self.assertNotContains(response, 'Security alert')
+
+    def test_inbox_filter_by_address(self):
+        response = self.client.get(reverse('mailboxes:inbox'), {'address': self.addr2.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotContains(response, 'Your subscription receipt')
+        self.assertContains(response, 'Security alert')
+
+    def test_inbox_filter_by_status(self):
+        response_unread = self.client.get(reverse('mailboxes:inbox'), {'status': 'unread'})
+        self.assertEqual(response_unread.status_code, 200)
+        self.assertContains(response_unread, 'Your subscription receipt')
+        self.assertNotContains(response_unread, 'Security alert')
+
+        response_read = self.client.get(reverse('mailboxes:inbox'), {'status': 'read'})
+        self.assertEqual(response_read.status_code, 200)
+        self.assertNotContains(response_read, 'Your subscription receipt')
+        self.assertContains(response_read, 'Security alert')
+
+    def test_inbox_search(self):
+        response = self.client.get(reverse('mailboxes:inbox'), {'q': 'subscription'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Your subscription receipt')
+        self.assertNotContains(response, 'Security alert')
+
+        response_sender = self.client.get(reverse('mailboxes:inbox'), {'q': 'GitHub'})
+        self.assertEqual(response_sender.status_code, 200)
+        self.assertNotContains(response_sender, 'Your subscription receipt')
+        self.assertContains(response_sender, 'Security alert')
+
+    def test_inbox_pagination(self):
+        for i in range(25):
+            EmailMessage.objects.create(
+                email_address=self.addr1,
+                recipient='netflix@viomet.online',
+                sender='Sender',
+                subject=f'Bulk Subject {i:02d}',
+                body_plain='Bulk content'
+            )
+        response = self.client.get(reverse('mailboxes:inbox'))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context['page_obj']), 20)
+
+        response_p2 = self.client.get(reverse('mailboxes:inbox'), {'page': '2'})
+        self.assertEqual(response_p2.status_code, 200)
+        self.assertEqual(len(response_p2.context['page_obj']), 7)
+
+    def test_email_detail_view_marks_read(self):
+        self.assertFalse(self.email1.is_read)
+        response = self.client.get(reverse('mailboxes:email_detail', args=[self.email1.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Your subscription receipt')
+        self.assertContains(response, 'Thank you for your payment.')
+
+        self.email1.refresh_from_db()
+        self.assertTrue(self.email1.is_read)
+
+    def test_email_detail_other_user_404(self):
+        response = self.client.get(reverse('mailboxes:email_detail', args=[self.email_user2.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_email_html_raw_sandboxed(self):
+        response = self.client.get(reverse('mailboxes:email_html_raw', args=[self.email1.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Content-Security-Policy', response.headers)
+        self.assertIn("default-src 'none'", response.headers['Content-Security-Policy'])
+        self.assertContains(response, '<base target="_blank">')
+        self.assertContains(response, 'Thank you for your payment.')
+
+    def test_email_html_raw_other_user_404(self):
+        response = self.client.get(reverse('mailboxes:email_html_raw', args=[self.email_user2.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_email_toggle_read(self):
+        self.assertTrue(self.email2.is_read)
+        response = self.client.post(reverse('mailboxes:email_toggle_read', args=[self.email2.pk]))
+        self.assertEqual(response.status_code, 302)
+        self.email2.refresh_from_db()
+        self.assertFalse(self.email2.is_read)
+
+    def test_email_toggle_read_other_user_404(self):
+        response = self.client.post(reverse('mailboxes:email_toggle_read', args=[self.email_user2.pk]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_email_delete(self):
+        response = self.client.post(reverse('mailboxes:email_delete', args=[self.email1.pk]))
+        self.assertRedirects(response, reverse('mailboxes:inbox'), fetch_redirect_response=False)
+        self.assertFalse(EmailMessage.objects.filter(pk=self.email1.pk).exists())
+
+    def test_email_delete_other_user_404(self):
+        response = self.client.post(reverse('mailboxes:email_delete', args=[self.email_user2.pk]))
+        self.assertEqual(response.status_code, 404)
+        self.assertTrue(EmailMessage.objects.filter(pk=self.email_user2.pk).exists())
+
+    def test_email_bulk_action_mark_read(self):
+        self.assertFalse(self.email1.is_read)
+        response = self.client.post(reverse('mailboxes:email_bulk_action'), {
+            'action': 'mark_read',
+            'selected_emails': [self.email1.pk]
+        })
+        self.assertEqual(response.status_code, 302)
+        self.email1.refresh_from_db()
+        self.assertTrue(self.email1.is_read)
+
+    def test_email_bulk_action_mark_unread(self):
+        self.assertTrue(self.email2.is_read)
+        response = self.client.post(reverse('mailboxes:email_bulk_action'), {
+            'action': 'mark_unread',
+            'selected_emails': [self.email2.pk]
+        })
+        self.assertEqual(response.status_code, 302)
+        self.email2.refresh_from_db()
+        self.assertFalse(self.email2.is_read)
+
+    def test_email_bulk_action_delete(self):
+        response = self.client.post(reverse('mailboxes:email_bulk_action'), {
+            'action': 'delete',
+            'selected_emails': [self.email1.pk, self.email2.pk]
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(EmailMessage.objects.filter(pk=self.email1.pk).exists())
+        self.assertFalse(EmailMessage.objects.filter(pk=self.email2.pk).exists())
+
+    def test_email_bulk_action_user_isolation(self):
+        # user1 tries to bulk delete user2's email
+        response = self.client.post(reverse('mailboxes:email_bulk_action'), {
+            'action': 'delete',
+            'selected_emails': [self.email_user2.pk]
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(EmailMessage.objects.filter(pk=self.email_user2.pk).exists())
 
 
 class ValidationTests(TestCase):

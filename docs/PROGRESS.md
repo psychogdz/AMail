@@ -80,14 +80,41 @@
 - [x] Dynamic dashboard integration reflecting real email counts with user isolation
 - [x] 9 new mail ingestion & integration tests added (61 total tests passing)
 
+---
+
+## Phase 5: Inbox & Email Viewer
+**Status**: ✅ Complete
+
+### Completed
+- [x] Full-featured Inbox interface (`templates/mailboxes/inbox.html`):
+  - Unread badge counter in header
+  - Search bar across subject, sender, sender name/email, body, and recipient address
+  - Filter pills for status (All, Unread, Read) and Category
+  - Bulk actions bar (Select All, Mark Read, Mark Unread, Delete Selected)
+  - Message list table with read/unread visual indicators, attachment icons, and timestamps
+  - Responsive layout without horizontal overflow
+  - Empty state with filter reset and quick creation link
+  - Full pagination preserving active search and filter query parameters
+- [x] Comprehensive Email Detail Viewer (`templates/mailboxes/email_detail.html`):
+  - Detailed metadata header (Subject, Sender, Recipient + Category badge, Date, Size)
+  - Attachment detection and metadata badge list (filename, MIME type, size)
+  - Content view switcher (HTML View vs Plain Text view)
+  - Sandboxed HTML iframe rendering endpoint (`/inbox/<pk>/html/`) with strict Content Security Policy (`default-src 'none'`), `<base target="_blank">`, and `X-Content-Type-Options: nosniff` preventing script execution and CSS contamination
+  - Formatted plain text content display with text wrapping
+  - Collapsible raw headers inspector (`<details>`)
+  - Individual quick actions: Toggle Read/Unread, Delete with confirmation
+  - Automatic marking as read upon viewing
+- [x] Enabled "Inbox" sidebar navigation link across the dashboard
+- [x] 19 new inbox & email viewer unit and integration tests added (80 total tests passing)
+
 ### Key Decisions
-- Pipe transport with standalone python script keeps RAM usage under 10MB on 1GB VPS.
-- Recipient rejection at SMTP time (`virtual_mailbox_maps` SQLite query) drops spam/unknown recipients before Python script invocation.
-- Attachments are scanned for metadata without persisting large binaries, protecting 10GB SSD.
+- HTML emails rendered in an isolated `iframe` with `sandbox="allow-popups"` and strict CSP (`default-src 'none'`) preventing XSS attacks while safely rendering email styling and images.
+- `<base target="_blank">` injected automatically so links in emails open in new tabs without navigating the app window.
+- Bulk operations enforce strict user ownership (`email_address__user = request.user`) preventing unauthorized multi-record updates.
 
 ### Test Results
 ```
-Ran 61 tests in 71.622s — OK
+Ran 80 tests in 98.628s — OK
 
 AccountsTests (10):
   ✓ test_csrf_enforced
@@ -131,6 +158,27 @@ EmailAddressTests (18):
   ✓ test_address_list_filter_by_category
   ✓ test_address_list_pagination
 
+InboxViewTests (19):
+  ✓ test_inbox_requires_auth
+  ✓ test_inbox_shows_user_emails_only
+  ✓ test_inbox_filter_by_category
+  ✓ test_inbox_filter_by_address
+  ✓ test_inbox_filter_by_status
+  ✓ test_inbox_search
+  ✓ test_inbox_pagination
+  ✓ test_email_detail_view_marks_read
+  ✓ test_email_detail_other_user_404
+  ✓ test_email_html_raw_sandboxed
+  ✓ test_email_html_raw_other_user_404
+  ✓ test_email_toggle_read
+  ✓ test_email_toggle_read_other_user_404
+  ✓ test_email_delete
+  ✓ test_email_delete_other_user_404
+  ✓ test_email_bulk_action_mark_read
+  ✓ test_email_bulk_action_mark_unread
+  ✓ test_email_bulk_action_delete
+  ✓ test_email_bulk_action_user_isolation
+
 MailIngestTests (9):
   ✓ test_ingest_plain_text
   ✓ test_ingest_html_and_text_multipart
@@ -167,5 +215,5 @@ ValidationTests (4):
 
 ---
 
-## Phase 5: Inbox & Email Viewer
+## Phase 6: Security & Optimization
 **Status**: ⏳ Next

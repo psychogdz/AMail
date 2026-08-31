@@ -18,4 +18,12 @@ urlpatterns = [
     path('addresses/<int:pk>/toggle/', views.address_toggle, name='address_toggle'),
     path('addresses/<int:pk>/move/', views.address_move, name='address_move'),
     path('addresses/<int:pk>/delete/', views.address_delete, name='address_delete'),
+
+    # Inbox & Email Viewer
+    path('inbox/', views.inbox_list, name='inbox'),
+    path('inbox/<int:pk>/', views.email_detail, name='email_detail'),
+    path('inbox/<int:pk>/html/', views.email_html_raw, name='email_html_raw'),
+    path('inbox/<int:pk>/toggle-read/', views.email_toggle_read, name='email_toggle_read'),
+    path('inbox/<int:pk>/delete/', views.email_delete, name='email_delete'),
+    path('inbox/bulk/', views.email_bulk_action, name='email_bulk_action'),
 ]

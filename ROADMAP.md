@@ -28,7 +28,7 @@
 - SMTP-level recipient rejection
 - Email parsing and storage
 
-## Phase 5: Inbox & Email Viewer ⬅️ Next
+## Phase 5: Inbox & Email Viewer ✅
 - Inbox interface
 - Email list with pagination
 - Email content viewer
@@ -37,7 +37,7 @@
 - Search functionality
 - Bulk actions
 
-## Phase 6: Security & Optimization
+## Phase 6: Security & Optimization ⬅️ Next
 - Rate limiting
 - Input sanitization hardening
 - Resource optimization
