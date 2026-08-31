@@ -34,58 +34,104 @@
 - [x] Admin registration for both models
 - [x] Tests written and passing (32 new, 42 total)
 
+---
+
+## Phase 3: Random Email Generation
+**Status**: ✅ Complete
+
+### Completed
+- [x] Random address generator utility (`apps/mailboxes/generator.py`) using Python's `secrets` module
+- [x] Three generation styles implemented:
+  - **Short Random**: 5 alphanumeric chars (e.g. `x7k29`)
+  - **Standard Random**: 8 alphanumeric chars (e.g. `k7x92m4p`)
+  - **Human-like Random**: adjective + noun + 2-digit number (e.g. `silverfox42`)
+- [x] Built-in lightweight curated wordlists for human-like style without external API dependencies
+- [x] Server-side uniqueness checking against DB and reserved address list with automatic retries
+- [x] AJAX/JSON endpoint (`/addresses/generate-random/`) for dynamic on-demand address generation
+- [x] Enhanced creation UI (`templates/mailboxes/address_create.html`) with dual-method tabs:
+  - Method A: Custom Email creation with live domain suffix preview
+  - Method B: Random Generator with style selector, live preview badge, and "Generate Again"
+- [x] Address deletion confirmation dialog (`templates/mailboxes/address_delete.html`) with safe options:
+  - Option 1: Disable address (stops accepting mail, preserves history)
+  - Option 2: Delete permanently (removes address and records)
+- [x] 10 new tests added (52 total tests passing)
+
 ### Key Decisions
-- EmailAddress uses `local_part` + `domain` with unique_together constraint
-- Domain defaults to settings.EMAIL_DOMAIN (viomet.online)
-- CategoryForm validates unique_together (user + name) in clean_name
-- Address validation: ^[a-z0-9][a-z0-9._-]*[a-z0-9]$ (or single alphanumeric)
-- 16 reserved addresses blocked (postmaster, abuse, admin, etc.)
-- Cross-user duplicate addresses rejected (same local_part+domain)
+- Python standard library `secrets` used for cryptographically secure random generation.
+- Generates only valid lowercase local-part characters meeting all RFC/project constraints.
+- Generator ensures uniqueness across the entire domain before proposing candidates.
+- Safe deletion page allows soft-deactivation (disable) preserving historical inbox records.
 
 ### Test Results
 ```
-Ran 42 tests in 49.159s — OK
+Ran 52 tests in 59.233s — OK
+
+AccountsTests (10):
+  ✓ test_csrf_enforced
+  ✓ test_dashboard_requires_auth
+  ✓ test_login_invalid_credentials
+  ✓ test_login_page_renders
+  ✓ test_login_valid_credentials
+  ✓ test_logout
+  ✓ test_logout_requires_post
+  ✓ test_no_registration_url
+  ✓ test_password_change_requires_auth
+  ✓ test_password_change_works
 
 CategoryTests (10):
-  ✓ category_list_requires_auth
-  ✓ category_list_shows_own
-  ✓ category_create
-  ✓ category_create_duplicate
-  ✓ category_edit
-  ✓ category_edit_other_user → 404
-  ✓ category_delete
-  ✓ category_delete_moves_addresses
-  ✓ category_delete_uncategorizes_addresses
-  ✓ category_delete_other_user → 404
+  ✓ test_category_list_requires_auth
+  ✓ test_category_list_shows_own
+  ✓ test_category_create
+  ✓ test_category_create_duplicate
+  ✓ test_category_edit
+  ✓ test_category_edit_other_user
+  ✓ test_category_delete
+  ✓ test_category_delete_moves_addresses
+  ✓ test_category_delete_uncategorizes_addresses
+  ✓ test_category_delete_other_user
 
 EmailAddressTests (18):
-  ✓ address_list_requires_auth
-  ✓ address_list_shows_own
-  ✓ address_create
-  ✓ address_create_no_category
-  ✓ address_create_duplicate
-  ✓ address_create_duplicate_cross_user
-  ✓ address_create_reserved
-  ✓ address_create_invalid_chars
-  ✓ address_create_uppercase_normalized
-  ✓ address_toggle
-  ✓ address_toggle_other_user → 404
-  ✓ address_delete
-  ✓ address_delete_other_user → 404
-  ✓ address_move_category
-  ✓ address_detail_own
-  ✓ address_detail_other_user → 404
-  ✓ address_list_filter_by_category
-  ✓ address_list_pagination
+  ✓ test_address_list_requires_auth
+  ✓ test_address_list_shows_own
+  ✓ test_address_create
+  ✓ test_address_create_no_category
+  ✓ test_address_create_duplicate
+  ✓ test_address_create_duplicate_cross_user
+  ✓ test_address_create_reserved
+  ✓ test_address_create_invalid_chars
+  ✓ test_address_create_uppercase_normalized
+  ✓ test_address_toggle
+  ✓ test_address_toggle_other_user
+  ✓ test_address_move_category
+  ✓ test_address_detail_own
+  ✓ test_address_detail_other_user
+  ✓ test_address_list_filter_by_category
+  ✓ test_address_list_pagination
+
+RandomGeneratorTests (8):
+  ✓ test_generate_short_style
+  ✓ test_generate_standard_style
+  ✓ test_generate_human_like_style
+  ✓ test_generate_random_local_part_uniqueness
+  ✓ test_generate_random_skips_existing
+  ✓ test_generate_api_authenticated
+  ✓ test_generate_api_unauthenticated
+  ✓ test_create_address_with_generated_local_part
+
+AddressDeleteTests (4):
+  ✓ test_address_delete_get_confirmation
+  ✓ test_address_delete_post_action_delete
+  ✓ test_address_delete_post_action_disable
+  ✓ test_address_delete_other_user
 
 ValidationTests (4):
-  ✓ valid_local_parts
-  ✓ invalid_local_parts
-  ✓ reserved_addresses
-  ✓ max_length
+  ✓ test_valid_local_parts
+  ✓ test_invalid_local_parts
+  ✓ test_reserved_addresses
+  ✓ test_max_length
 ```
 
 ---
 
-## Phase 3: Random Email Generation
+## Phase 4: Mail Receiving Integration
 **Status**: ⏳ Next

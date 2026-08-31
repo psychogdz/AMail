@@ -1,7 +1,13 @@
 from django.test import TestCase, Client
 from django.contrib.auth.models import User
 from django.urls import reverse
+import re
 from apps.mailboxes.models import Category, EmailAddress
+from apps.mailboxes.generator import (
+    generate_random_local_part,
+    generate_raw_candidate,
+    GENERATOR_STYLES,
+)
 
 
 class CategoryTests(TestCase):
@@ -34,7 +40,6 @@ class CategoryTests(TestCase):
     def test_category_create_duplicate(self):
         response = self.client.post(reverse('mailboxes:category_create'), {'name': 'Personal'})
         self.assertEqual(response.status_code, 200)
-        # Form should have errors — duplicate name for same user
         form = response.context['form']
         self.assertTrue(form.errors)
 
@@ -175,7 +180,6 @@ class EmailAddressTests(TestCase):
         addr = EmailAddress.objects.create(user=self.user1, local_part='toggle')
         self.assertTrue(addr.is_active)
         response = self.client.post(reverse('mailboxes:address_toggle', args=[addr.pk]))
-        # View redirects to HTTP_REFERER or address_list
         self.assertEqual(response.status_code, 302)
         addr.refresh_from_db()
         self.assertFalse(addr.is_active)
@@ -186,18 +190,6 @@ class EmailAddressTests(TestCase):
         self.assertEqual(response.status_code, 404)
         addr2.refresh_from_db()
         self.assertTrue(addr2.is_active)
-
-    def test_address_delete(self):
-        addr = EmailAddress.objects.create(user=self.user1, local_part='todelete')
-        response = self.client.post(reverse('mailboxes:address_delete', args=[addr.pk]))
-        self.assertRedirects(response, reverse('mailboxes:address_list'), fetch_redirect_response=False)
-        self.assertFalse(EmailAddress.objects.filter(pk=addr.pk).exists())
-
-    def test_address_delete_other_user(self):
-        addr2 = EmailAddress.objects.create(user=self.user2, local_part='protected')
-        response = self.client.post(reverse('mailboxes:address_delete', args=[addr2.pk]))
-        self.assertEqual(response.status_code, 404)
-        self.assertTrue(EmailAddress.objects.filter(pk=addr2.pk).exists())
 
     def test_address_move_category(self):
         addr = EmailAddress.objects.create(user=self.user1, local_part='moveme')
@@ -241,6 +233,113 @@ class EmailAddressTests(TestCase):
         response2 = self.client.get(reverse('mailboxes:address_list'), {'page': '2'})
         self.assertEqual(response2.status_code, 200)
         self.assertEqual(len(response2.context['page_obj']), 5)
+
+
+class RandomGeneratorTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='genuser', password='password')
+        self.client = Client()
+        self.client.login(username='genuser', password='password')
+
+    def test_generate_short_style(self):
+        for _ in range(10):
+            val = generate_raw_candidate(style='short')
+            self.assertEqual(len(val), 5)
+            self.assertTrue(re.match(r'^[a-z0-9]{5}$', val))
+
+    def test_generate_standard_style(self):
+        for _ in range(10):
+            val = generate_raw_candidate(style='standard')
+            self.assertEqual(len(val), 8)
+            self.assertTrue(re.match(r'^[a-z0-9]{8}$', val))
+
+    def test_generate_human_like_style(self):
+        for _ in range(10):
+            val = generate_raw_candidate(style='human_like')
+            self.assertTrue(re.match(r'^[a-z]+[0-9]{2}$', val))
+
+    def test_generate_random_local_part_uniqueness(self):
+        generated = set()
+        for _ in range(20):
+            val = generate_random_local_part(style='short')
+            self.assertNotIn(val, generated)
+            generated.add(val)
+            EmailAddress.objects.create(user=self.user, local_part=val)
+
+    def test_generate_random_skips_existing(self):
+        EmailAddress.objects.create(user=self.user, local_part='fixed1')
+        val = generate_random_local_part(style='standard')
+        self.assertNotEqual(val, 'fixed1')
+
+    def test_generate_api_authenticated(self):
+        for style in GENERATOR_STYLES:
+            response = self.client.get(reverse('mailboxes:address_generate_random'), {'style': style})
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertTrue(data['success'])
+            self.assertIn('local_part', data)
+            self.assertIn('address', data)
+            self.assertIn('@viomet.online', data['address'])
+            self.assertEqual(data['style'], style)
+
+    def test_generate_api_unauthenticated(self):
+        self.client.logout()
+        response = self.client.get(reverse('mailboxes:address_generate_random'))
+        self.assertEqual(response.status_code, 302)
+
+    def test_create_address_with_generated_local_part(self):
+        gen_part = generate_random_local_part(style='human_like')
+        response = self.client.post(reverse('mailboxes:address_create'), {
+            'local_part': gen_part,
+        })
+        self.assertRedirects(response, reverse('mailboxes:address_list'), fetch_redirect_response=False)
+        self.assertTrue(EmailAddress.objects.filter(user=self.user, local_part=gen_part).exists())
+
+
+class AddressDeleteTests(TestCase):
+    def setUp(self):
+        self.user1 = User.objects.create_user(username='user1', password='password')
+        self.user2 = User.objects.create_user(username='user2', password='password')
+        self.client = Client()
+        self.client.login(username='user1', password='password')
+        self.address = EmailAddress.objects.create(user=self.user1, local_part='deltest', is_active=True)
+
+    def test_address_delete_get_confirmation(self):
+        response = self.client.get(reverse('mailboxes:address_delete', args=[self.address.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'deltest@viomet.online')
+        self.assertContains(response, 'Disable Address')
+        self.assertContains(response, 'Delete Address Permanently')
+
+    def test_address_delete_post_action_delete(self):
+        response = self.client.post(
+            reverse('mailboxes:address_delete', args=[self.address.pk]),
+            {'action': 'delete'}
+        )
+        self.assertRedirects(response, reverse('mailboxes:address_list'), fetch_redirect_response=False)
+        self.assertFalse(EmailAddress.objects.filter(pk=self.address.pk).exists())
+
+    def test_address_delete_post_action_disable(self):
+        response = self.client.post(
+            reverse('mailboxes:address_delete', args=[self.address.pk]),
+            {'action': 'disable'}
+        )
+        self.assertRedirects(response, reverse('mailboxes:address_list'), fetch_redirect_response=False)
+        self.address.refresh_from_db()
+        self.assertFalse(self.address.is_active)
+        self.assertTrue(EmailAddress.objects.filter(pk=self.address.pk).exists())
+
+    def test_address_delete_other_user(self):
+        addr2 = EmailAddress.objects.create(user=self.user2, local_part='protected')
+        response_get = self.client.get(reverse('mailboxes:address_delete', args=[addr2.pk]))
+        self.assertEqual(response_get.status_code, 404)
+
+        response_post = self.client.post(
+            reverse('mailboxes:address_delete', args=[addr2.pk]),
+            {'action': 'delete'}
+        )
+        self.assertEqual(response_post.status_code, 404)
+        self.assertTrue(EmailAddress.objects.filter(pk=addr2.pk).exists())
 
 
 class ValidationTests(TestCase):

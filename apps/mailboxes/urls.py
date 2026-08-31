@@ -10,9 +10,10 @@ urlpatterns = [
     path('categories/<int:pk>/edit/', views.category_edit, name='category_edit'),
     path('categories/<int:pk>/delete/', views.category_delete, name='category_delete'),
     
-    # Email Addresses  
+    # Email Addresses
     path('addresses/', views.address_list, name='address_list'),
     path('addresses/create/', views.address_create, name='address_create'),
+    path('addresses/generate-random/', views.address_generate_api, name='address_generate_random'),
     path('addresses/<int:pk>/', views.address_detail, name='address_detail'),
     path('addresses/<int:pk>/toggle/', views.address_toggle, name='address_toggle'),
     path('addresses/<int:pk>/move/', views.address_move, name='address_move'),

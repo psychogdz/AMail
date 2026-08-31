@@ -15,13 +15,13 @@
 - Email address management (enable/disable/delete)
 - Category assignment
 
-## Phase 3: Random Email Generation ⬅️ Next
+## Phase 3: Random Email Generation ✅
 - Random address generator (short, standard, human-like)
 - Preview before save
 - Generate Again functionality
 - Uniqueness validation
 
-## Phase 4: Mail Receiving Integration
+## Phase 4: Mail Receiving Integration ⬅️ Next
 - Postfix configuration
 - Lightweight ingest script (ingest_mail.py)
 - SQLite virtual mailbox maps

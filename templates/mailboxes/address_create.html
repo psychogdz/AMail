@@ -4,61 +4,195 @@
 
 {% block content %}
 <style>
-    .input-group { display: flex; align-items: center; }
+    .input-group { display: flex; align-items: stretch; }
     .input-suffix { 
-        padding: 8px 12px;
-        background-color: var(--bg-color-hover);
+        display: flex;
+        align-items: center;
+        padding: 0 16px;
+        background-color: var(--bg-tertiary);
         border: 1px solid var(--border-color);
         border-left: none;
         border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-        color: var(--text-muted);
+        color: var(--text-secondary);
         font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 0.95rem;
     }
     .form-input.grouped {
         border-radius: var(--radius-sm) 0 0 var(--radius-sm);
     }
+    .tabs-nav {
+        display: flex;
+        gap: 8px;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 24px;
+    }
+    .tab-btn {
+        padding: 10px 18px;
+        background: transparent;
+        border: none;
+        border-bottom: 2px solid transparent;
+        color: var(--text-secondary);
+        cursor: pointer;
+        font-weight: 500;
+        font-size: 0.95rem;
+        transition: color var(--transition), border-color var(--transition);
+    }
+    .tab-btn:hover {
+        color: var(--text-primary);
+    }
+    .tab-btn.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+    }
+    .style-options {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+    .style-card {
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 14px;
+        cursor: pointer;
+        transition: border-color var(--transition), background-color var(--transition);
+        text-align: center;
+    }
+    .style-card:hover {
+        border-color: var(--border-focus);
+    }
+    .style-card.selected {
+        border-color: var(--accent);
+        background-color: var(--accent-subtle);
+    }
+    .style-card input[type="radio"] {
+        display: none;
+    }
+    .style-name {
+        font-weight: 600;
+        font-size: 0.9rem;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+    }
+    .style-desc {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        font-family: 'SF Mono', 'Consolas', monospace;
+    }
+    .preview-box {
+        background-color: var(--bg-tertiary);
+        border: 1px dashed var(--border-color);
+        border-radius: var(--radius);
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 24px;
+    }
+    .preview-address {
+        font-family: 'SF Mono', 'Consolas', monospace;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--accent);
+        word-break: break-all;
+        margin-bottom: 12px;
+    }
+    .preview-actions {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+    }
 </style>
 
-<div style="max-width: 600px; margin: 0 auto;">
-    <h1>Create Email Address</h1>
+<div style="max-width: 640px; margin: 0 auto;">
+    <div class="mb-md">
+        <a href="{% url 'mailboxes:address_list' %}" class="text-secondary" style="font-size: 0.9rem;">&larr; Back to Addresses</a>
+        <h1 class="mt-sm">Create Email Address</h1>
+        <p class="text-secondary">Create a custom address or generate a unique disposable address.</p>
+    </div>
     
-    <div class="card mt-4">
-        <form method="POST">
+    <div class="card">
+        <div class="tabs-nav">
+            <button type="button" class="tab-btn active" id="tabBtnCustom" onclick="switchTab('custom')">
+                ✏️ Custom Address
+            </button>
+            <button type="button" class="tab-btn" id="tabBtnRandom" onclick="switchTab('random')">
+                🎲 Random Generator
+            </button>
+        </div>
+
+        <form method="POST" id="addressForm">
             {% csrf_token %}
             
             {% if form.non_field_errors %}
-            <div class="alert alert-error mb-4">
+            <div class="alert alert-error mb-md">
                 {{ form.non_field_errors }}
             </div>
             {% endif %}
 
-            <div class="form-group mb-4">
-                <label for="{{ form.local_part.id_for_label }}" class="form-label">{{ form.local_part.label }}</label>
-                <div class="input-group">
-                    {{ form.local_part }}
-                    <span class="input-suffix">@{{ email_domain|default:"viomet.online" }}</span>
+            <!-- Method A: Custom Email Tab -->
+            <div id="sectionCustom">
+                <div class="form-group mb-md">
+                    <label for="id_local_part" class="form-label">Email Prefix (Local Part)</label>
+                    <div class="input-group">
+                        <input type="text" name="local_part" id="id_local_part" class="form-input grouped" 
+                               placeholder="e.g. netflix, github, shopping" 
+                               value="{{ form.local_part.value|default:'' }}" autofocus>
+                        <span class="input-suffix">@{{ email_domain|default:"viomet.online" }}</span>
+                    </div>
+                    <small class="text-muted mt-1">Letters, numbers, dots, hyphens, or underscores (1-64 characters).</small>
+                    {% if form.local_part.errors %}
+                    <div class="form-error">{{ form.local_part.errors.0 }}</div>
+                    {% endif %}
                 </div>
-                {% if form.local_part.help_text %}
-                <div class="text-muted mt-1" style="font-size: 0.875rem;">{{ form.local_part.help_text }}</div>
-                {% endif %}
-                {% if form.local_part.errors %}
-                <div class="text-danger mt-1" style="color: var(--danger-color); font-size: 0.875rem;">{{ form.local_part.errors }}</div>
-                {% endif %}
             </div>
 
-            <div class="form-group mb-4">
-                <label for="{{ form.category.id_for_label }}" class="form-label">{{ form.category.label }}</label>
+            <!-- Method B: Random Email Tab -->
+            <div id="sectionRandom" style="display: none;">
+                <label class="form-label mb-2">Select Generator Style</label>
+                <div class="style-options">
+                    <label class="style-card" id="card_short">
+                        <input type="radio" name="gen_style" value="short" onchange="updateStyleSelection('short')">
+                        <div class="style-name">Short</div>
+                        <div class="style-desc">x7k29</div>
+                    </label>
+                    
+                    <label class="style-card selected" id="card_standard">
+                        <input type="radio" name="gen_style" value="standard" checked onchange="updateStyleSelection('standard')">
+                        <div class="style-name">Standard</div>
+                        <div class="style-desc">k7x92m4p</div>
+                    </label>
+                    
+                    <label class="style-card" id="card_human_like">
+                        <input type="radio" name="gen_style" value="human_like" onchange="updateStyleSelection('human_like')">
+                        <div class="style-name">Human-like</div>
+                        <div class="style-desc">silverfox42</div>
+                    </label>
+                </div>
+
+                <div class="preview-box">
+                    <div class="text-muted mb-2" style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Generated Preview</div>
+                    <div class="preview-address" id="previewAddress">
+                        <span id="previewPrefix">{{ suggested_local_part|default:"k7x92m4p" }}</span>@{{ email_domain|default:"viomet.online" }}
+                    </div>
+                    <div class="preview-actions">
+                        <button type="button" class="btn btn-ghost btn-sm" id="btnGenerateAgain" onclick="generateNewAddress()">
+                            🔄 Generate Again
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Common Category Selection -->
+            <div class="form-group mb-md">
+                <label for="id_category" class="form-label">Category (Optional)</label>
                 {{ form.category }}
-                {% if form.category.help_text %}
-                <div class="text-muted mt-1" style="font-size: 0.875rem;">{{ form.category.help_text }}</div>
-                {% endif %}
                 {% if form.category.errors %}
-                <div class="text-danger mt-1" style="color: var(--danger-color); font-size: 0.875rem;">{{ form.category.errors }}</div>
+                <div class="form-error">{{ form.category.errors.0 }}</div>
                 {% endif %}
             </div>
             
-            <div class="flex gap-4 mt-6">
-                <button type="submit" class="btn btn-primary">Create Email</button>
+            <div class="flex gap-3 mt-lg">
+                <button type="submit" class="btn btn-primary" id="btnSubmit">Create Email Address</button>
                 <a href="{% url 'mailboxes:address_list' %}" class="btn btn-ghost">Cancel</a>
             </div>
         </form>
@@ -66,19 +200,89 @@
 </div>
 
 <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        const inputs = document.querySelectorAll('input[type="text"]');
-        inputs.forEach(input => {
-            input.classList.add('form-input');
-            if (input.name === 'local_part') {
-                input.classList.add('grouped');
-            }
-        });
+let currentMode = 'custom';
+let currentStyle = 'standard';
+const emailDomain = "{{ email_domain|default:'viomet.online' }}";
+const generateApiUrl = "{% url 'mailboxes:address_generate_random' %}";
+
+function switchTab(mode) {
+    currentMode = mode;
+    const tabCustom = document.getElementById('tabBtnCustom');
+    const tabRandom = document.getElementById('tabBtnRandom');
+    const secCustom = document.getElementById('sectionCustom');
+    const secRandom = document.getElementById('sectionRandom');
+    const inputLocalPart = document.getElementById('id_local_part');
+
+    if (mode === 'custom') {
+        tabCustom.classList.add('active');
+        tabRandom.classList.remove('active');
+        secCustom.style.display = 'block';
+        secRandom.style.display = 'none';
+        inputLocalPart.focus();
+    } else {
+        tabRandom.classList.add('active');
+        tabCustom.classList.remove('active');
+        secCustom.style.display = 'none';
+        secRandom.style.display = 'block';
         
-        const selects = document.querySelectorAll('select');
-        selects.forEach(select => {
-            select.classList.add('form-input');
+        // If local part is empty or user switched to random, sync preview value
+        const previewPrefix = document.getElementById('previewPrefix').textContent.trim();
+        if (previewPrefix) {
+            inputLocalPart.value = previewPrefix;
+        } else {
+            generateNewAddress();
+        }
+    }
+}
+
+function updateStyleSelection(style) {
+    currentStyle = style;
+    document.querySelectorAll('.style-card').forEach(card => card.classList.remove('selected'));
+    const activeCard = document.getElementById('card_' + style);
+    if (activeCard) {
+        activeCard.classList.add('selected');
+    }
+    generateNewAddress();
+}
+
+function generateNewAddress() {
+    const btn = document.getElementById('btnGenerateAgain');
+    const previewPrefix = document.getElementById('previewPrefix');
+    const inputLocalPart = document.getElementById('id_local_part');
+    
+    if (btn) btn.disabled = true;
+    previewPrefix.style.opacity = '0.5';
+
+    fetch(`${generateApiUrl}?style=${encodeURIComponent(currentStyle)}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.local_part) {
+                previewPrefix.textContent = data.local_part;
+                if (currentMode === 'random') {
+                    inputLocalPart.value = data.local_part;
+                }
+            }
+        })
+        .catch(err => console.error("Error generating email:", err))
+        .finally(() => {
+            if (btn) btn.disabled = false;
+            previewPrefix.style.opacity = '1';
         });
-    });
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    const select = document.getElementById('id_category');
+    if (select) select.classList.add('form-input');
+    
+    // Initial sync
+    const inputLocalPart = document.getElementById('id_local_part');
+    const initialVal = inputLocalPart.value.trim();
+    if (!initialVal) {
+        const previewVal = document.getElementById('previewPrefix').textContent.trim();
+        if (previewVal) {
+            // keep it ready
+        }
+    }
+});
 </script>
 {% endblock %}

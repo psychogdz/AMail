@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Address | AMail{% endblock %}
+
+{% block content %}
+<style>
+    .option-card {
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        padding: 16px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        cursor: pointer;
+        transition: border-color var(--transition), background-color var(--transition);
+    }
+    .option-card:hover {
+        border-color: var(--border-focus);
+    }
+    .option-card input[type="radio"] {
+        margin-top: 4px;
+    }
+    .option-title {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+    }
+    .option-desc {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+    }
+</style>
+
+<div style="max-width: 540px; margin: 0 auto;">
+    <div class="mb-md">
+        <a href="{% url 'mailboxes:address_detail' pk=address.pk %}" class="text-secondary" style="font-size: 0.9rem;">&larr; Back to Address</a>
+        <h1 class="mt-sm">Manage / Delete Address</h1>
+    </div>
+
+    <div class="card">
+        <div class="alert alert-error mb-md">
+            ⚠️ You are managing the address <strong style="font-family: monospace;">{{ address.address }}</strong>.
+        </div>
+
+        <p class="text-secondary mb-md">
+            Please choose what action you want to perform on this email address:
+        </p>
+
+        <form method="POST">
+            {% csrf_token %}
+
+            <label class="option-card" for="action_disable">
+                <input type="radio" name="action" id="action_disable" value="disable" {% if address.is_active %}checked{% endif %}>
+                <div>
+                    <div class="option-title">Disable Address (Recommended)</div>
+                    <div class="option-desc">
+                        Deactivates the address so it stops accepting new incoming emails, but preserves historical messages in your inbox.
+                    </div>
+                </div>
+            </label>
+
+            <label class="option-card" for="action_delete">
+                <input type="radio" name="action" id="action_delete" value="delete" {% if not address.is_active %}checked{% endif %}>
+                <div>
+                    <div class="option-title" style="color: var(--danger);">Delete Address Permanently</div>
+                    <div class="option-desc">
+                        Permanently removes this email address and all its associated messages from the system. This cannot be undone.
+                    </div>
+                </div>
+            </label>
+
+            <div class="flex gap-3 mt-lg">
+                <button type="submit" class="btn btn-danger">Confirm Action</button>
+                <a href="{% url 'mailboxes:address_list' %}" class="btn btn-ghost">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
