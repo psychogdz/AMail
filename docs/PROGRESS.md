@@ -130,13 +130,30 @@
   - `deploy/systemd/README.md` documentation
 - [x] 10 new security & optimization unit tests added (90 total tests passing)
 
-### Key Decisions
-- Uses standard Linux systemd timers instead of running long-lived background daemons (Celery/Redis), preserving ~150MB+ of RAM.
-- Added compound indexes to eliminate full table scans during inbox filtering and Postfix delivery lookups.
+---
+
+## Phase 7: Deployment & Production Hardening
+**Status**: ✅ Complete
+
+### Completed
+- [x] Production settings hardened (`config/settings/production.py`):
+  - Enforced `DEBUG = False`, `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS = 31536000`, `SECURE_HSTS_INCLUDE_SUBDOMAINS`, `SECURE_HSTS_PRELOAD`, `SECURE_PROXY_SSL_HEADER`, and `X_FRAME_OPTIONS = 'SAMEORIGIN'`
+- [x] Production environment template (`.env.example`)
+- [x] Gunicorn configuration tuned for 1 vCPU / 1 GB RAM VPS (`deploy/gunicorn/gunicorn.conf.py`):
+  - 2 sync workers, recycling with max_requests jitter to eliminate memory leaks
+- [x] Gunicorn systemd service definition (`deploy/systemd/amail.service`):
+  - Sandboxed execution with `PrivateTmp=true`, `ProtectSystem=full`, `ProtectHome=true`, `NoNewPrivileges=true`
+- [x] Nginx reverse proxy configuration (`deploy/nginx/amail.conf`):
+  - TLS 1.2/1.3 modern parameters, HSTS, gzip, static file caching, 15r/s rate limiting zone, sensitive file blocking
+- [x] Postfix TLS & anti-open-relay deployment snippet (`deploy/postfix/main.cf.snippet`)
+- [x] Automated Ubuntu 24.04 LTS installation script (`deploy/scripts/install.sh`)
+- [x] Zero-downtime update script (`deploy/scripts/update.sh`)
+- [x] End-to-end production deployment guide (`deploy/DEPLOYMENT.md`)
+- [x] Updated root `README.md`
 
 ### Test Results
 ```
-Ran 90 tests in 112.033s — OK
+Ran 90 tests in 111.849s — OK
 
 AccountsTests (10):
   ✓ test_csrf_enforced
@@ -246,8 +263,3 @@ ValidationTests (4):
   ✓ test_reserved_addresses
   ✓ test_max_length
 ```
-
----
-
-## Phase 7: Deployment & Production Hardening
-**Status**: ⏳ Next

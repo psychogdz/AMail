@@ -1,0 +1,27 @@
+[Unit]
+Description=AMail Gunicorn Application Server
+After=network.target
+
+[Service]
+Type=notify
+User=amail
+Group=amail
+WorkingDirectory=/var/www/amail
+EnvironmentFile=/var/www/amail/.env
+ExecStart=/var/www/amail/venv/bin/gunicorn \
+    --config /var/www/amail/deploy/gunicorn/gunicorn.conf.py \
+    config.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=10
+Restart=always
+RestartSec=5s
+
+# Security Hardening
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

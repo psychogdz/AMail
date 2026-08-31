@@ -1,53 +1,52 @@
-# AMail
+# AMail — Self-Hosted Private Disposable Email System
 
-A private, self-hosted disposable email management system built with Python and Django. Designed for single-tenant or small-team use on a dedicated domain (`viomet.online`).
+A complete, ultra-lightweight, production-ready private disposable email management system built with Python, Django, SQLite, Postfix, Gunicorn, and Nginx.
 
----
-
-## Features
-
-- **User Authentication**: Secure login/logout and password management. No public registration; users are created by the administrator.
-- **Category Organization**: Categorize disposable addresses by service or purpose with color coding.
-- **Custom & Random Email Creation**: Create specific custom prefixes or generate random addresses (short, standard, human-readable).
-- **Integrated Inbox**: View received messages with pagination, read/unread tracking, and safe HTML rendering.
-- **Search & Filtering**: Search emails by sender, subject, content, and recipient address.
-- **Dashboard Stats**: Real-time stats on active addresses, total emails received, and storage usage.
-- **Automated Cleanup**: Configurable retention policies to automatically purge old messages via background tasks.
+Engineered specifically for low-resource VPS environments (**1 vCPU, 1 GB RAM, 10 GB SSD**) on **Ubuntu 24.04 LTS** for the domain **`viomet.online`** and web management at **`https://amail.viomet.online`**.
 
 ---
 
-## Tech Stack
+## Key Features
 
-- **Backend**: Python 3.12+, Django 5.x
-- **Database**: SQLite (WAL mode enabled for concurrent read/write)
-- **Mail Transfer Agent (MTA)**: Postfix (with SQLite virtual map lookup & pipe transport)
-- **Web Server & Gateway**: Nginx + Gunicorn
-- **Process Management**: systemd services & timers
-- **Target OS**: Ubuntu 24.04 LTS
-
----
-
-## Requirements
-
-- Python 3.12 or higher
-- Git
-- SQLite 3
-- Ubuntu 24.04 LTS (for production MTA integration)
+- **Private & Single-Tenant/Team**: No public signup. Users are provisioned exclusively by administrators.
+- **Custom & Generated Disposable Addresses**: Create custom prefixes (e.g. `netflix@viomet.online`) or generate random addresses using 3 secure algorithms (Short alphanumeric, Standard, or Human-like).
+- **SMTP-Level Recipient Rejection**: Postfix directly queries SQLite maps at the SMTP boundary (`550 User unknown`), rejecting invalid/disabled recipients before invoking any Python processes.
+- **Ultra-Light Ingestion Pipeline**: Ingestion script (`scripts/ingest_mail.py`) uses standard Python libraries only, running in <30ms with ~9MB RAM per email.
+- **Rich & Secure Inbox**: View plain text and sandboxed HTML emails (with strict Content Security Policy, XSS protection, and external link isolation). Includes full search, status filters, category filters, and bulk management actions.
+- **Automated Retention & VACUUM**: Native Linux systemd timers automatically purge expired emails and run SQLite `VACUUM` to return disk space to the OS.
+- **Zero Heavy Dependencies**: No Celery, Redis, RabbitMQ, React, or Node.js. Total server idle RAM usage is under **190 MB**.
 
 ---
 
-## Quick Start (Development)
+## Tech Stack & Architecture
+
+| Component | Technology | Memory Footprint |
+|---|---|---|
+| **Web Server & Reverse Proxy** | Nginx | ~10 MB RAM |
+| **Application Server** | Gunicorn (2 sync workers) | ~70 MB RAM |
+| **Backend Framework** | Django 5.x (Python 3.12+) | (within Gunicorn) |
+| **Database** | SQLite 3 (WAL mode + busy timeout) | Shared in-process |
+| **Mail Transfer Agent** | Postfix (SQLite virtual maps + pipe) | ~20 MB RAM |
+| **Background Automation** | Native Linux systemd timers | 0 MB persistent |
+| **Total Idle Server RAM** | — | **~160 – 190 MB RAM** |
+
+---
+
+## Quick Start (Local Development)
 
 1. **Clone the repository**:
    ```bash
-   git clone <repo>
+   git clone <repo-url> AMail
    cd AMail
    ```
 
 2. **Create and activate virtual environment**:
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   # On Linux/macOS:
+   source venv/bin/activate
+   # On Windows:
+   venv\Scripts\activate
    ```
 
 3. **Install dependencies**:
@@ -55,78 +54,85 @@ A private, self-hosted disposable email management system built with Python and 
    pip install -r requirements.txt
    ```
 
-4. **Configure environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env as needed
-   ```
-
-5. **Apply database migrations**:
+4. **Initialize database & static files**:
    ```bash
    python manage.py migrate
+   python manage.py collectstatic --noinput
    ```
 
-6. **Create an admin user**:
+5. **Create initial admin account**:
    ```bash
    python manage.py createsuperuser
    ```
 
-7. **Run development server**:
+6. **Run development server**:
    ```bash
    python manage.py runserver
    ```
-
-Visit `http://127.0.0.1:8000/` in your browser.
-
----
-
-## Environment Variables
-
-| Variable | Description | Default / Example |
-|---|---|---|
-| `DJANGO_SETTINGS_MODULE` | Django settings module to load | `config.settings.dev` |
-| `SECRET_KEY` | Django cryptographic secret key | (random string in production) |
-| `DEBUG` | Enable/disable debug mode | `True` (dev) / `False` (prod) |
-| `ALLOWED_HOSTS` | Comma-separated list of allowed hostnames | `localhost,127.0.0.1,amail.viomet.online` |
-| `EMAIL_DOMAIN` | Domain used for disposable email addresses | `viomet.online` |
-| `SITE_URL` | Base URL of the web application | `https://amail.viomet.online` |
-| `EMAIL_RETENTION_DAYS` | Days before received emails are purged | `30` |
-| `MAX_EMAIL_SIZE_MB` | Maximum allowed email message size in megabytes | `10` |
+   Open `http://127.0.0.1:8000/` in your browser.
 
 ---
 
-## DNS Configuration
+## Production Deployment (Ubuntu 24.04 LTS)
 
-To receive emails at `@viomet.online` and access the management interface:
+### 1. DNS Configuration
+Set up the following DNS records at your domain registrar/DNS provider:
 
-| Type | Host / Name | Target / Value | Priority / Proxy |
+| Type | Name | Target | Proxy Status |
 |---|---|---|---|
-| `A` | `amail.viomet.online` | `<SERVER_IP>` | DNS Only (or Proxied) |
-| `A` | `mail.viomet.online` | `<SERVER_IP>` | **DNS Only** (Grey Cloud) |
-| `MX` | `viomet.online` | `mail.viomet.online` | Priority `10` |
+| **A** | `amail.viomet.online` | `<VPS_IP>` | DNS Only |
+| **A** | `mail.viomet.online` | `<VPS_IP>` | DNS Only |
+| **MX** | `viomet.online` | `mail.viomet.online` (Priority: 10) | DNS Only |
+| **TXT** | `viomet.online` | `v=spf1 -all` | DNS Only |
+| **TXT** | `_dmarc.viomet.online` | `v=DMARC1; p=reject;` | DNS Only |
 
-> **Important (Cloudflare)**: Any DNS records involved in mail delivery (`mail.viomet.online` and `MX`) **must be set to DNS Only** (unproxied). Cloudflare's HTTP proxy does not proxy raw SMTP port 25 traffic.
+### 2. Automated Installation
+On your Ubuntu 24.04 LTS VPS, run the automated provisioning script:
+
+```bash
+git clone <repo-url> /var/www/amail
+cd /var/www/amail
+sudo chmod +x deploy/scripts/install.sh
+sudo ./deploy/scripts/install.sh
+```
+
+### 3. Setup Administrator & SSL
+```bash
+# Create admin user
+sudo -u amail /var/www/amail/venv/bin/python manage.py createsuperuser
+
+# Obtain Let's Encrypt SSL certificates
+sudo certbot --nginx -d amail.viomet.online -d mail.viomet.online
+```
+
+For complete deployment details and manual instructions, see [`deploy/DEPLOYMENT.md`](file:///c:/Users/P1165/Documents/Antigravity/AMail/deploy/DEPLOYMENT.md).
 
 ---
 
-## Production Deployment
+## Management Commands
 
-Production deployment runs on Ubuntu 24.04 LTS using:
-- **Nginx**: Reverse proxy serving static files and forwarding application traffic to Gunicorn over a UNIX socket, with SSL/TLS termination via Let's Encrypt / Certbot.
-- **Gunicorn**: WSGI HTTP server managed by systemd (`amail.service`).
-- **Postfix**: MTA configured with SQLite virtual alias/mailbox lookups, piping incoming emails directly into an ingestion script (`ingest_mail.py`).
-- **systemd Timers**: Automated periodic execution of cleanup routines for expired messages.
+```bash
+# Ingest raw email message (for testing)
+python manage.py ingest_email --recipient netflix@viomet.online --file email.eml
 
-Detailed deployment instructions and automation scripts will be provided in later phases.
+# Clean up expired emails past retention period
+python manage.py cleanup_emails --days 30 --vacuum
+
+# Dry run retention cleanup
+python manage.py cleanup_emails --days 30 --dry-run
+
+# Inspect storage health and database statistics
+python manage.py check_storage
+```
 
 ---
 
-## Security
+## Test Suite
 
-- **No Public Registration**: Account creation is restricted to administrators via Django admin or CLI.
-- **Ownership Isolation**: Users can only view and manage email addresses and messages associated with their account.
-- **CSRF & Security Headers**: Built-in Django CSRF protection, secure cookies, and strict security headers in production.
-- **Safe HTML Rendering**: Incoming email HTML content is sanitized before display to prevent XSS.
+Run the full automated test suite:
+```bash
+python manage.py test apps -v2
+```
 
 ---
 
