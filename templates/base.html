@@ -1,0 +1,60 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}AMail Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/main.css' %}">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+</head>
+<body>
+  <input type="checkbox" id="mobile-menu-toggle" class="menu-toggle-checkbox">
+  
+  <div class="layout">
+    <header class="mobile-header">
+      <label for="mobile-menu-toggle" class="menu-toggle-label">☰</label>
+      <div class="mobile-logo">✉ AMail</div>
+    </header>
+    
+    <label for="mobile-menu-toggle" class="sidebar-overlay"></label>
+    
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="icon">✉</span> AMail
+      </div>
+      
+      <nav class="sidebar-nav">
+        <a href="{% url 'core:dashboard' %}" class="nav-link active">Dashboard</a>
+        <a href="#" class="nav-link disabled">Email Addresses</a>
+        <a href="#" class="nav-link disabled">Inbox</a>
+      </nav>
+      
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <span class="username">{{ user.username }}</span>
+          <a href="{% url 'accounts:password_change' %}">Change Password</a>
+        </div>
+        <form action="{% url 'accounts:logout' %}" method="post">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-ghost btn-sm w-full">Logout</button>
+        </form>
+      </div>
+    </aside>
+
+    <div class="main-wrapper">
+      <main class="main-content">
+        {% if messages %}
+          <div class="messages">
+            {% for message in messages %}
+              <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+        
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>

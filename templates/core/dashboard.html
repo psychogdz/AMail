@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard - AMail{% endblock %}
+
+{% block content %}
+<div class="mb-lg">
+  <h1>Dashboard</h1>
+  <p>Welcome back, {{ user.username }}. Here's an overview of your email activity.</p>
+</div>
+
+<div class="stats-grid mb-lg">
+  <div class="stat-card">
+    <div class="stat-icon">📧</div>
+    <div class="stat-info">
+      <div class="stat-label">Total Addresses</div>
+      <div class="stat-value">{{ stats.total_addresses|default:"0" }}</div>
+    </div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-icon">✅</div>
+    <div class="stat-info">
+      <div class="stat-label">Active Addresses</div>
+      <div class="stat-value">{{ stats.active_addresses|default:"0" }}</div>
+    </div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-icon">📬</div>
+    <div class="stat-info">
+      <div class="stat-label">Unread Emails</div>
+      <div class="stat-value">{{ stats.unread_emails|default:"0" }}</div>
+    </div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-icon">📨</div>
+    <div class="stat-info">
+      <div class="stat-label">Total Messages</div>
+      <div class="stat-value">{{ stats.total_emails|default:"0" }}</div>
+    </div>
+  </div>
+  
+  <div class="stat-card">
+    <div class="stat-icon">🏷️</div>
+    <div class="stat-info">
+      <div class="stat-label">Categories</div>
+      <div class="stat-value">{{ stats.total_categories|default:"0" }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-lg">
+  <h2>Quick Actions</h2>
+  <div class="flex gap-3 mt-sm">
+    <button class="btn btn-primary" disabled title="Available in future phases">Create Email Address</button>
+  </div>
+</div>
+{% endblock %}
