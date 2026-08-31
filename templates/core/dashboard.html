@@ -53,7 +53,8 @@
 <div class="card mb-lg">
   <h2>Quick Actions</h2>
   <div class="flex gap-3 mt-sm">
-    <button class="btn btn-primary" disabled title="Available in future phases">Create Email Address</button>
+    <a href="{% url 'mailboxes:address_create' %}" class="btn btn-primary">Create Email Address</a>
+    <a href="{% url 'mailboxes:category_list' %}" class="btn btn-ghost">Manage Categories</a>
   </div>
 </div>
 {% endblock %}

@@ -8,14 +8,14 @@
 - Base templates and responsive CSS
 - Dashboard placeholder
 
-## Phase 2: Categories & Email Addresses ⬅️ Next
+## Phase 2: Categories & Email Addresses ✅
 - Category model (CRUD)
 - Email address model
 - Custom email address creation with validation
 - Email address management (enable/disable/delete)
 - Category assignment
 
-## Phase 3: Random Email Generation
+## Phase 3: Random Email Generation ⬅️ Next
 - Random address generator (short, standard, human-like)
 - Preview before save
 - Generate Again functionality

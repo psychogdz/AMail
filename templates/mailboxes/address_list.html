@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+
+{% block title %}Email Addresses | AMail{% endblock %}
+
+{% block content %}
+<style>
+    .email-address { font-family: 'SF Mono', 'Consolas', monospace; font-size: 1.1rem; }
+    .copy-btn { background: none; border: none; cursor: pointer; padding: 4px; font-size: 1rem; color: var(--text-muted); transition: color 0.2s; }
+    .copy-btn:hover { color: var(--text-color); }
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-btn { padding: 4px 12px; border-radius: 999px; text-decoration: none; border: 1px solid var(--border-color); color: var(--text-muted); background: transparent; transition: all 0.2s; font-size: 0.875rem; }
+    .filter-btn:hover { background-color: rgba(255, 255, 255, 0.05); color: var(--text-color); }
+    .filter-btn.active { background-color: var(--primary-color); color: white; border-color: var(--primary-color); }
+    .pagination { display: flex; gap: 4px; justify-content: center; margin-top: 24px; }
+    .page-link { padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-decoration: none; color: var(--text-color); }
+    .page-link:hover { background-color: rgba(255, 255, 255, 0.05); }
+    .page-link.active { background-color: var(--primary-color); border-color: var(--primary-color); color: white; }
+    .action-form { display: inline; margin: 0; padding: 0; }
+</style>
+
+<div class="flex" style="justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1>Email Addresses</h1>
+    <a href="{% url 'mailboxes:address_create' %}" class="btn btn-primary">Create Address</a>
+</div>
+
+<div class="filter-bar">
+    <a href="{% url 'mailboxes:address_list' %}" class="filter-btn {% if not request.GET.category %}active{% endif %}">All</a>
+    {% for cat in categories %}
+    <a href="{% url 'mailboxes:address_list' %}?category={{ cat.pk }}" class="filter-btn {% if request.GET.category == cat.pk|stringformat:'s' %}active{% endif %}">{{ cat.name }}</a>
+    {% endfor %}
+</div>
+
+{% if page_obj.paginator.count > 0 %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="w-full" style="text-align: left; border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <th style="padding: 12px 16px;">Address</th>
+                    <th style="padding: 12px 16px;">Category</th>
+                    <th style="padding: 12px 16px;">Status</th>
+                    <th style="padding: 12px 16px;">Created</th>
+                    <th style="padding: 12px 16px; text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for address in page_obj %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 12px 16px;">
+                        <a href="{% url 'mailboxes:address_detail' pk=address.pk %}" class="email-address text-color" style="text-decoration: none;">{{ address.address }}</a>
+                        <button class="copy-btn" onclick="copyAddress('{{ address.address }}')" title="Copy">📋</button>
+                    </td>
+                    <td style="padding: 12px 16px;">
+                        {% if address.category %}
+                        <span class="badge" style="background-color: var(--bg-color-hover); color: var(--text-color);">{{ address.category.name }}</span>
+                        {% else %}
+                        <span class="text-muted" style="font-size: 0.875rem;">Uncategorized</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px 16px;">
+                        {% if address.is_active %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge badge-danger">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 12px 16px;">{{ address.created_at|date:'M d, Y' }}</td>
+                    <td style="padding: 12px 16px; text-align: right;">
+                        <form method="POST" action="{% url 'mailboxes:address_toggle' pk=address.pk %}" class="action-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <button type="submit" class="btn btn-ghost btn-sm">
+                                {% if address.is_active %}Disable{% else %}Enable{% endif %}
+                            </button>
+                        </form>
+                        <form method="POST" action="{% url 'mailboxes:address_delete' pk=address.pk %}" class="action-form" onsubmit="return confirm('Are you sure you want to delete this address?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if page_obj.has_other_pages %}
+<div class="pagination">
+    {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}" class="page-link">&laquo; Prev</a>
+    {% endif %}
+    
+    {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+        <span class="page-link active">{{ num }}</span>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+        <a href="?page={{ num }}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}" class="page-link">{{ num }}</a>
+        {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}{% if request.GET.category %}&category={{ request.GET.category }}{% endif %}" class="page-link">Next &raquo;</a>
+    {% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state" style="text-align: center; padding: 48px; border: 1px dashed var(--border-color); border-radius: var(--radius-md); margin-top: 24px;">
+    <div style="font-size: 3rem; margin-bottom: 16px;">📧</div>
+    <h3 style="margin-bottom: 8px;">No email addresses yet</h3>
+    <p class="text-muted" style="margin-bottom: 24px;">Create your first disposable email address.</p>
+    <a href="{% url 'mailboxes:address_create' %}" class="btn btn-primary">Create Address</a>
+</div>
+{% endif %}
+
+<script>
+function copyAddress(addr) {
+  navigator.clipboard.writeText(addr).then(() => {
+    // brief visual feedback
+    const toast = document.createElement('div');
+    toast.textContent = 'Copied to clipboard';
+    toast.style.position = 'fixed';
+    toast.style.bottom = '20px';
+    toast.style.right = '20px';
+    toast.style.backgroundColor = 'var(--primary-color)';
+    toast.style.color = 'white';
+    toast.style.padding = '8px 16px';
+    toast.style.borderRadius = '4px';
+    toast.style.zIndex = '9999';
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.remove();
+    }, 2000);
+  });
+}
+</script>
+{% endblock %}

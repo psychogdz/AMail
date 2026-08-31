@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}Categories | AMail{% endblock %}
+
+{% block content %}
+<div class="flex" style="justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <h1>Categories</h1>
+    <a href="{% url 'mailboxes:category_create' %}" class="btn btn-primary">New Category</a>
+</div>
+
+{% if categories %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="w-full" style="text-align: left; border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <th style="padding: 12px 16px;">Name</th>
+                    <th style="padding: 12px 16px;">Email Addresses</th>
+                    <th style="padding: 12px 16px;">Created</th>
+                    <th style="padding: 12px 16px; text-align: right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for category in categories %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 12px 16px;">{{ category.name }}</td>
+                    <td style="padding: 12px 16px;">{{ category.address_count|default:"0" }}</td>
+                    <td style="padding: 12px 16px;">{{ category.created_at|date:'M d, Y' }}</td>
+                    <td style="padding: 12px 16px; text-align: right;">
+                        <a href="{% url 'mailboxes:category_edit' pk=category.pk %}" class="btn btn-ghost btn-sm">Edit</a>
+                        <a href="{% url 'mailboxes:category_delete' pk=category.pk %}" class="btn btn-danger btn-sm">Delete</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="empty-state" style="text-align: center; padding: 48px; border: 1px dashed var(--border-color); border-radius: var(--radius-md); margin-top: 24px;">
+    <div style="font-size: 3rem; margin-bottom: 16px;">🏷️</div>
+    <h3 style="margin-bottom: 8px;">No categories yet</h3>
+    <p class="text-muted" style="margin-bottom: 24px;">Organize your disposable email addresses with categories.</p>
+    <a href="{% url 'mailboxes:category_create' %}" class="btn btn-primary">Create Category</a>
+</div>
+{% endif %}
+{% endblock %}

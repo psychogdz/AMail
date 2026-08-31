@@ -1,0 +1,118 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ address.address }} | AMail{% endblock %}
+
+{% block content %}
+<style>
+    .email-address { font-family: 'SF Mono', 'Consolas', monospace; font-size: 1.5rem; word-break: break-all; }
+    .copy-btn { background: none; border: none; cursor: pointer; padding: 4px; font-size: 1.25rem; color: var(--text-muted); transition: color 0.2s; vertical-align: middle; }
+    .copy-btn:hover { color: var(--text-color); }
+    .action-form { display: inline; margin: 0; padding: 0; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-top: 24px; }
+    .stat-card { background-color: var(--bg-color-hover); padding: 16px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); text-align: center; }
+    .stat-value { font-size: 2rem; font-weight: bold; margin-bottom: 4px; }
+    .stat-label { color: var(--text-muted); font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; }
+</style>
+
+<div class="mb-4">
+    <a href="{% url 'mailboxes:address_list' %}" class="text-muted" style="text-decoration: none;">&larr; Back to Addresses</a>
+</div>
+
+<div class="card mb-6">
+    <div class="flex" style="justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+        <div>
+            <div class="flex" style="align-items: center; gap: 8px; margin-bottom: 12px;">
+                <h1 class="email-address m-0" style="margin: 0;">{{ address.address }}</h1>
+                <button class="copy-btn" onclick="copyAddress('{{ address.address }}')" title="Copy">📋</button>
+            </div>
+            
+            <div class="flex" style="align-items: center; gap: 16px; margin-bottom: 16px;">
+                {% if address.is_active %}
+                <span class="badge badge-success">Active</span>
+                {% else %}
+                <span class="badge badge-danger">Disabled</span>
+                {% endif %}
+                
+                <span class="text-muted">
+                    Category: 
+                    {% if address.category %}
+                    <a href="{% url 'mailboxes:category_edit' pk=address.category.pk %}" style="color: var(--primary-color);">{{ address.category.name }}</a>
+                    {% else %}
+                    Uncategorized
+                    {% endif %}
+                </span>
+
+                <span class="text-muted">Created: {{ address.created_at|date:'M d, Y' }}</span>
+            </div>
+        </div>
+
+        <div class="flex" style="gap: 8px; flex-wrap: wrap;">
+            <form method="POST" action="{% url 'mailboxes:address_toggle' pk=address.pk %}" class="action-form">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" class="btn btn-ghost">
+                    {% if address.is_active %}Disable{% else %}Enable{% endif %}
+                </button>
+            </form>
+            <form method="POST" action="{% url 'mailboxes:address_delete' pk=address.pk %}" class="action-form" onsubmit="return confirm('Are you sure you want to delete this address?');">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{% url 'mailboxes:address_list' %}">
+                <button type="submit" class="btn btn-danger">Delete</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="mt-4 pt-4" style="border-top: 1px solid var(--border-color);">
+        <h3 class="mb-3" style="font-size: 1rem;">Move to Category</h3>
+        <form method="POST" action="{% url 'mailboxes:address_detail' pk=address.pk %}" class="flex gap-2" style="max-width: 300px;">
+            {% csrf_token %}
+            <select name="category" class="form-input" style="flex-grow: 1;">
+                <option value="">Uncategorized</option>
+                {% for cat in categories %}
+                <option value="{{ cat.pk }}" {% if address.category and address.category.pk == cat.pk %}selected{% endif %}>{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-primary btn-sm">Move</button>
+        </form>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value">0</div>
+            <div class="stat-label">Received Emails</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" style="color: var(--primary-color);">0</div>
+            <div class="stat-label">Unread Emails</div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyAddress(addr) {
+  navigator.clipboard.writeText(addr).then(() => {
+    const toast = document.createElement('div');
+    toast.textContent = 'Copied to clipboard';
+    toast.style.position = 'fixed';
+    toast.style.bottom = '20px';
+    toast.style.right = '20px';
+    toast.style.backgroundColor = 'var(--primary-color)';
+    toast.style.color = 'white';
+    toast.style.padding = '8px 16px';
+    toast.style.borderRadius = '4px';
+    toast.style.zIndex = '9999';
+    document.body.appendChild(toast);
+    setTimeout(() => {
+        toast.remove();
+    }, 2000);
+  });
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+    const selects = document.querySelectorAll('select');
+    selects.forEach(select => {
+        select.classList.add('form-input');
+    });
+});
+</script>
+{% endblock %}

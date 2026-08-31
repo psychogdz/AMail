@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Email Address | AMail{% endblock %}
+
+{% block content %}
+<style>
+    .input-group { display: flex; align-items: center; }
+    .input-suffix { 
+        padding: 8px 12px;
+        background-color: var(--bg-color-hover);
+        border: 1px solid var(--border-color);
+        border-left: none;
+        border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+        color: var(--text-muted);
+        font-family: 'SF Mono', 'Consolas', monospace;
+    }
+    .form-input.grouped {
+        border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+    }
+</style>
+
+<div style="max-width: 600px; margin: 0 auto;">
+    <h1>Create Email Address</h1>
+    
+    <div class="card mt-4">
+        <form method="POST">
+            {% csrf_token %}
+            
+            {% if form.non_field_errors %}
+            <div class="alert alert-error mb-4">
+                {{ form.non_field_errors }}
+            </div>
+            {% endif %}
+
+            <div class="form-group mb-4">
+                <label for="{{ form.local_part.id_for_label }}" class="form-label">{{ form.local_part.label }}</label>
+                <div class="input-group">
+                    {{ form.local_part }}
+                    <span class="input-suffix">@{{ email_domain|default:"viomet.online" }}</span>
+                </div>
+                {% if form.local_part.help_text %}
+                <div class="text-muted mt-1" style="font-size: 0.875rem;">{{ form.local_part.help_text }}</div>
+                {% endif %}
+                {% if form.local_part.errors %}
+                <div class="text-danger mt-1" style="color: var(--danger-color); font-size: 0.875rem;">{{ form.local_part.errors }}</div>
+                {% endif %}
+            </div>
+
+            <div class="form-group mb-4">
+                <label for="{{ form.category.id_for_label }}" class="form-label">{{ form.category.label }}</label>
+                {{ form.category }}
+                {% if form.category.help_text %}
+                <div class="text-muted mt-1" style="font-size: 0.875rem;">{{ form.category.help_text }}</div>
+                {% endif %}
+                {% if form.category.errors %}
+                <div class="text-danger mt-1" style="color: var(--danger-color); font-size: 0.875rem;">{{ form.category.errors }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="flex gap-4 mt-6">
+                <button type="submit" class="btn btn-primary">Create Email</button>
+                <a href="{% url 'mailboxes:address_list' %}" class="btn btn-ghost">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const inputs = document.querySelectorAll('input[type="text"]');
+        inputs.forEach(input => {
+            input.classList.add('form-input');
+            if (input.name === 'local_part') {
+                input.classList.add('grouped');
+            }
+        });
+        
+        const selects = document.querySelectorAll('select');
+        selects.forEach(select => {
+            select.classList.add('form-input');
+        });
+    });
+</script>
+{% endblock %}

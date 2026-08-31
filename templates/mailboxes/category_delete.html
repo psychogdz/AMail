@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+
+{% block title %}Delete Category | AMail{% endblock %}
+
+{% block content %}
+<div style="max-width: 500px; margin: 0 auto;">
+    <h1>Delete Category</h1>
+    
+    <div class="card mt-4" style="border-left: 4px solid var(--danger-color);">
+        <h3 class="mb-4">Are you sure you want to delete "{{ category.name }}"?</h3>
+        
+        <p class="mb-4">This action cannot be undone.</p>
+        
+        {% if category.address_count > 0 %}
+        <div class="alert alert-warning mb-4" style="background-color: rgba(255,165,0,0.1); border: 1px solid rgba(255,165,0,0.3); padding: 12px; border-radius: var(--radius-sm);">
+            <strong>Warning:</strong> This category contains <strong>{{ category.address_count }}</strong> email address(es).
+        </div>
+        {% endif %}
+
+        <form method="POST">
+            {% csrf_token %}
+            
+            {% if category.address_count > 0 %}
+            <div class="form-group mb-4">
+                <label for="move_to_category" class="form-label">Move addresses to:</label>
+                <select name="move_to_category" id="move_to_category" class="form-input">
+                    <option value="">Leave uncategorized</option>
+                    {% for other_cat in other_categories %}
+                    <option value="{{ other_cat.pk }}">{{ other_cat.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="flex gap-4 mt-6">
+                <button type="submit" class="btn btn-danger">Delete Category</button>
+                <a href="{% url 'mailboxes:category_list' %}" class="btn btn-ghost">Cancel</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+    .form-input {
+        width: 100%;
+        padding: 8px 12px;
+        background-color: var(--bg-color);
+        border: 1px solid var(--border-color);
+        color: var(--text-color);
+        border-radius: var(--radius-sm);
+    }
+</style>
+{% endblock %}

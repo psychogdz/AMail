@@ -25,8 +25,9 @@
       </div>
       
       <nav class="sidebar-nav">
-        <a href="{% url 'core:dashboard' %}" class="nav-link active">Dashboard</a>
-        <a href="#" class="nav-link disabled">Email Addresses</a>
+        <a href="{% url 'core:dashboard' %}" class="nav-link{% if request.resolver_match.url_name == 'dashboard' %} active{% endif %}">Dashboard</a>
+        <a href="{% url 'mailboxes:address_list' %}" class="nav-link{% if request.resolver_match.app_name == 'mailboxes' and 'address' in request.resolver_match.url_name %} active{% endif %}">Email Addresses</a>
+        <a href="{% url 'mailboxes:category_list' %}" class="nav-link{% if request.resolver_match.app_name == 'mailboxes' and 'category' in request.resolver_match.url_name %} active{% endif %}">Categories</a>
         <a href="#" class="nav-link disabled">Inbox</a>
       </nav>
       
