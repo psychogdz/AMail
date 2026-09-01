@@ -47,21 +47,23 @@ Before running the deployment script, configure the following DNS records at you
    cd /var/www/amail
    ```
 
-3. Make the install script executable and run it:
+3. Make scripts executable and run the provisioning script:
    ```bash
-   chmod +x deploy/scripts/install.sh
+   chmod +x deploy/scripts/*.sh
    sudo ./deploy/scripts/install.sh
    ```
+   *(The installer sets up Nginx in HTTP bootstrap mode, configures Postfix, creates users, initializes SQLite with WAL mode, and enables systemd timers.)*
 
 4. Create your initial admin account:
    ```bash
    sudo -u amail /var/www/amail/venv/bin/python manage.py createsuperuser
    ```
 
-5. Request Let's Encrypt SSL certificates:
+5. Acquire SSL Certificates & Activate HTTPS + Postfix TLS:
    ```bash
-   sudo certbot --nginx -d amail.viomet.online -d mail.viomet.online
+   sudo ./deploy/scripts/setup-ssl.sh your-email@example.com
    ```
+   *(This requests Let's Encrypt certificates for both `amail.viomet.online` and `mail.viomet.online`, grants Postfix read permissions, upgrades Nginx to HTTPS with HSTS, enables STARTTLS in Postfix, and registers the renewal reload hook.)*
 
 ---
 
@@ -71,7 +73,7 @@ If you prefer to deploy step-by-step manually:
 
 ### Step 4.1: System Packages & User Setup
 ```bash
-sudo apt update && sudo apt install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx postfix postfix-sqlite sqlite3 ufw acl
+sudo apt update && sudo apt install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx postfix postfix-sqlite sqlite3 ufw acl ssl-cert
 
 # Create dedicated application user
 sudo useradd --system --shell /bin/bash --home-dir /var/www/amail amail
@@ -118,6 +120,10 @@ sudo chown root:postfix /etc/postfix/sqlite-virtual-*.cf
 sudo cat /var/www/amail/deploy/postfix/master.cf.snippet >> /etc/postfix/master.cf
 sudo cat /var/www/amail/deploy/postfix/main.cf.snippet >> /etc/postfix/main.cf
 
+# Initial fallback snakeoil TLS certificate (prevents startup failures before Certbot runs)
+sudo postconf -e "smtpd_tls_cert_file = /etc/ssl/certs/ssl-cert-snakeoil.pem"
+sudo postconf -e "smtpd_tls_key_file = /etc/ssl/private/ssl-cert-snakeoil.key"
+
 sudo systemctl restart postfix
 ```
 
@@ -132,9 +138,10 @@ sudo systemctl enable --now amail.service
 sudo systemctl enable --now amail-cleanup.timer
 ```
 
-### Step 4.6: Nginx & Firewall
+### Step 4.6: Nginx HTTP Bootstrap & Firewall
 ```bash
-sudo cp /var/www/amail/deploy/nginx/amail.conf /etc/nginx/sites-available/
+# Install HTTP bootstrap config
+sudo cp /var/www/amail/deploy/nginx/amail-http.conf /etc/nginx/sites-available/amail.conf
 sudo ln -sf /etc/nginx/sites-available/amail.conf /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
@@ -147,9 +154,31 @@ sudo ufw allow 25/tcp comment 'SMTP'
 sudo ufw enable
 ```
 
+### Step 4.7: SSL Provisioning & HTTPS Activation
+```bash
+# Run the SSL setup helper
+sudo /var/www/amail/deploy/scripts/setup-ssl.sh your-email@example.com
+```
+
 ---
 
-## 5. Verification & Testing
+## 5. Automated Certificate Renewal & Lifecycle
+
+AMail integrates directly with Certbot's systemd timer (`certbot.timer`).
+
+A renewal deploy hook is automatically placed at `/etc/letsencrypt/renewal-hooks/deploy/amail-reload.sh`:
+- Ensures the `postfix` daemon user retains read access to renewed certificate keys via POSIX ACLs.
+- Safely reloads Nginx (`systemctl reload nginx`).
+- Safely reloads Postfix (`systemctl reload postfix`).
+
+To test the automated renewal workflow at any time:
+```bash
+sudo certbot renew --dry-run
+```
+
+---
+
+## 6. Verification & Testing
 
 ### 1. Web Application Check
 Open `https://amail.viomet.online` in your web browser. You should see the login page with HTTPS enabled and dark theme styling.
@@ -182,7 +211,7 @@ sudo journalctl -u amail-cleanup.service -n 20 --no-pager
 
 ---
 
-## 6. Zero-Downtime Application Updates
+## 7. Zero-Downtime Application Updates
 
 To deploy new code updates:
 ```bash
@@ -192,7 +221,7 @@ sudo ./deploy/scripts/update.sh
 
 ---
 
-## 7. SQLite Backup & Maintenance
+## 8. SQLite Backup & Maintenance
 
 Because AMail uses SQLite with WAL mode, online backups can be executed safely without stopping the service:
 ```bash

@@ -43,8 +43,8 @@ sudo chown root:postfix /etc/postfix/sqlite-*.cf
 
 ## 4. Permissions & Database Path
 
-1. Ensure the system user running the pipe script (`amail:amail` or `www-data:www-data`) has read/write access to `/opt/amail/db.sqlite3` and its parent directory.
-2. The `postfix` daemon user needs read access to `/opt/amail/db.sqlite3` to perform recipient validation lookups.
+1. Ensure the system user running the pipe script (`amail:amail`) has read/write access to `/var/www/amail/db.sqlite3` and its parent directory (`/var/www/amail`).
+2. The `postfix` daemon user needs read access to `/var/www/amail/db.sqlite3` to perform recipient validation lookups.
 
 ---
 

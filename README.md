@@ -101,11 +101,11 @@ sudo ./deploy/scripts/install.sh
 # Create admin user
 sudo -u amail /var/www/amail/venv/bin/python manage.py createsuperuser
 
-# Obtain Let's Encrypt SSL certificates
-sudo certbot --nginx -d amail.viomet.online -d mail.viomet.online
+# Obtain SSL certificates and activate HTTPS + Postfix TLS
+sudo /var/www/amail/deploy/scripts/setup-ssl.sh your-email@example.com
 ```
 
-For complete deployment details and manual instructions, see [`deploy/DEPLOYMENT.md`](file:///c:/Users/P1165/Documents/Antigravity/AMail/deploy/DEPLOYMENT.md).
+For complete deployment details and manual instructions, see [`deploy/DEPLOYMENT.md`](deploy/DEPLOYMENT.md).
 
 ---
 

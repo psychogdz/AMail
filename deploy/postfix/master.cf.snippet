@@ -2,4 +2,4 @@
 # Append to /etc/postfix/master.cf
 
 amail_pipe unix  -       n       n       -       2       pipe
-  flags=XDRhu user=amail:amail argv=/opt/amail/venv/bin/python3 /opt/amail/scripts/ingest_mail.py --sender=${sender} --recipient=${recipient} --size=${size} --db-path=/opt/amail/db.sqlite3
+  flags=XDRhu user=amail:amail argv=/var/www/amail/venv/bin/python3 /var/www/amail/scripts/ingest_mail.py --sender=${sender} --recipient=${recipient} --size=${size} --db-path=/var/www/amail/db.sqlite3
