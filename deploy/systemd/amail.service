@@ -3,7 +3,7 @@ Description=AMail Gunicorn Application Server
 After=network.target
 
 [Service]
-Type=notify
+Type=exec
 User=amail
 Group=amail
 WorkingDirectory=/var/www/amail
@@ -15,7 +15,8 @@ ExecReload=/bin/kill -s HUP $MAINPID
 KillMode=mixed
 TimeoutStopSec=10
 Restart=always
-RestartSec=5s
+RestartSec=3s
+SyslogIdentifier=amail
 
 # Security Hardening
 PrivateTmp=true

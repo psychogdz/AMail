@@ -102,11 +102,21 @@ sudo nano /var/www/amail/.env
 sudo -u amail /var/www/amail/venv/bin/python manage.py migrate
 sudo -u amail /var/www/amail/venv/bin/python manage.py collectstatic --noinput
 
-# Set directory permissions for Postfix / Gunicorn SQLite WAL concurrency
-sudo chmod 775 /var/www/amail
-sudo chmod 664 /var/www/amail/db.sqlite3
-sudo setfacl -R -m u:postfix:rwx -m u:www-data:rwx /var/www/amail
-sudo setfacl -R -d -m u:postfix:rwx -m u:www-data:rwx /var/www/amail
+# Base secure permissions: directories 750, files 640, secret .env 600
+sudo find /var/www/amail -type d -exec chmod 750 {} +
+sudo find /var/www/amail -type f -exec chmod 640 {} +
+sudo chmod 600 /var/www/amail/.env
+sudo chmod 750 /var/www/amail/deploy/scripts/*.sh /var/www/amail/scripts/ingest_mail.py 2>/dev/null || true
+
+# Nginx (www-data): Traversal only on root directory, read-only on staticfiles
+sudo setfacl -m u:www-data:x /var/www/amail
+sudo setfacl -R -m u:www-data:rX /var/www/amail/staticfiles
+sudo setfacl -R -d -m u:www-data:rX /var/www/amail/staticfiles
+
+# Postfix: Traversal on root directory, read-only on SQLite database and read/write on WAL/SHM
+sudo setfacl -m u:postfix:x /var/www/amail
+sudo setfacl -m u:postfix:r /var/www/amail/db.sqlite3
+sudo setfacl -m u:postfix:rw /var/www/amail/db.sqlite3* 2>/dev/null || true
 ```
 
 ### Step 4.4: Postfix Setup

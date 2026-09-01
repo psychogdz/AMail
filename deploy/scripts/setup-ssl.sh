@@ -57,6 +57,8 @@ certbot certonly --webroot -w /var/www/certbot \
     --keep-until-expiring
 
 CERT_DIR="/etc/letsencrypt/live/${CERT_NAME}"
+ARCHIVE_DIR="/etc/letsencrypt/archive/${CERT_NAME}"
+
 if [[ ! -f "${CERT_DIR}/fullchain.pem" ]]; then
     log_error "Certificate files not found at ${CERT_DIR}. Certbot acquisition may have failed."
     exit 1
@@ -64,10 +66,28 @@ fi
 
 log_success "SSL Certificate successfully acquired!"
 
-# 1. Configure ACL permissions so Postfix can read Let's Encrypt keys without permission errors
-log_info "Configuring certificate read permissions for Postfix daemon..."
-setfacl -R -m u:postfix:rx /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || chmod -R 755 /etc/letsencrypt/live /etc/letsencrypt/archive
-setfacl -R -d -m u:postfix:rx /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+# 1. Least-Privilege Certificate Permissions for Postfix
+log_info "Applying least-privilege certificate access permissions for Postfix..."
+
+# Ensure private keys are strictly non-world-readable
+chmod 700 /etc/letsencrypt/archive /etc/letsencrypt/archive/"${CERT_NAME}"
+chmod 600 "${ARCHIVE_DIR}"/privkey*.pem 2>/dev/null || true
+
+# Grant traversal permission on directory tree strictly to postfix user
+setfacl -m u:postfix:x /etc/letsencrypt
+setfacl -m u:postfix:x /etc/letsencrypt/live
+setfacl -m u:postfix:x "${CERT_DIR}"
+setfacl -m u:postfix:x /etc/letsencrypt/archive
+setfacl -m u:postfix:x "${ARCHIVE_DIR}"
+
+# Grant read-only permission on private key files strictly to postfix user
+setfacl -m u:postfix:r "${ARCHIVE_DIR}"/privkey*.pem 2>/dev/null || true
+
+# Set default ACLs so newly created renewal keys inherit read permissions for postfix
+setfacl -d -m u:postfix:r "${ARCHIVE_DIR}" 2>/dev/null || true
+setfacl -d -m u:postfix:x "${ARCHIVE_DIR}" 2>/dev/null || true
+
+log_success "Least-privilege certificate permissions configured (private keys remain non-world-readable)."
 
 # 2. Switch Nginx to production HTTPS configuration
 log_info "Activating Nginx HTTPS configuration..."
@@ -89,17 +109,31 @@ postconf -e "smtpd_tls_received_header = yes"
 systemctl restart postfix
 log_success "Postfix TLS active and restarted."
 
-# 4. Install automated renewal deploy hook
+# 4. Install automated renewal deploy hook with least-privilege ACL enforcement
 log_info "Installing Certbot renewal deploy hook..."
 mkdir -p /etc/letsencrypt/renewal-hooks/deploy
 cat <<'EOF' > /etc/letsencrypt/renewal-hooks/deploy/amail-reload.sh
 #!/usr/bin/env bash
-# Automatically reload Nginx and Postfix after successful certificate renewal
-setfacl -R -m u:postfix:rx /etc/letsencrypt/live /etc/letsencrypt/archive 2>/dev/null || true
+# Automatically update permissions and reload Nginx and Postfix after certificate renewal
+set -euo pipefail
+
+CERT_NAME="amail.viomet.online"
+ARCHIVE_DIR="/etc/letsencrypt/archive/${CERT_NAME}"
+
+# Enforce secure non-world-readable permissions
+chmod 700 /etc/letsencrypt/archive "${ARCHIVE_DIR}" 2>/dev/null || true
+chmod 600 "${ARCHIVE_DIR}"/privkey*.pem 2>/dev/null || true
+
+# Grant traversal and read-only access strictly to postfix user
+setfacl -m u:postfix:x /etc/letsencrypt /etc/letsencrypt/live /etc/letsencrypt/live/"${CERT_NAME}" /etc/letsencrypt/archive "${ARCHIVE_DIR}" 2>/dev/null || true
+setfacl -m u:postfix:r "${ARCHIVE_DIR}"/privkey*.pem 2>/dev/null || true
+setfacl -d -m u:postfix:r "${ARCHIVE_DIR}" 2>/dev/null || true
+
+# Reload services to pick up renewed certificates
 systemctl reload nginx 2>/dev/null || true
 systemctl reload postfix 2>/dev/null || true
 EOF
-chmod +x /etc/letsencrypt/renewal-hooks/deploy/amail-reload.sh
+chmod 750 /etc/letsencrypt/renewal-hooks/deploy/amail-reload.sh
 log_success "Certbot auto-renewal deploy hook installed."
 
 echo -e "\n${GREEN}==============================================================${NC}"
