@@ -49,25 +49,31 @@ def sync_virtual_mailboxes(output_path=None):
     lines.sort()
 
     try:
-        # Atomic write via temporary file in same directory
-        temp_fd, temp_path = tempfile.mkstemp(prefix='virtual_mailboxes_', dir=str(target_dir), text=True)
+        # Write first to a temporary file (use target_dir if writable, otherwise default temp dir)
+        temp_dir = str(target_dir) if os.access(str(target_dir), os.W_OK) else None
+        temp_fd, temp_path = tempfile.mkstemp(prefix='virtual_mailboxes_', dir=temp_dir, text=True)
         with os.fdopen(temp_fd, 'w', encoding='utf-8') as f:
             f.writelines(lines)
             f.flush()
             os.fsync(f.fileno())
 
-        # Set permissions: group-readable/writable so postfix and amail can access
+        # Attempt atomic rename if in same directory, otherwise write directly to target
         try:
             os.chmod(temp_path, 0o664)
-        except Exception:
-            pass
-
-        # Atomic rename
-        os.replace(temp_path, str(target))
+            os.replace(temp_path, str(target))
+        except (OSError, PermissionError):
+            with open(temp_path, 'r', encoding='utf-8') as src, open(str(target), 'w', encoding='utf-8') as dst:
+                dst.write(src.read())
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
 
         # Run postmap if available
         postmap_bin = shutil.which('postmap') or '/usr/sbin/postmap'
-        if os.path.exists(postmap_bin) or shutil.which('postmap'):
+        if os.path.exists(postmap_bin):
             res = subprocess.run([postmap_bin, str(target)], capture_output=True, text=True, timeout=10)
             if res.returncode != 0:
                 return len(lines), False
@@ -75,9 +81,4 @@ def sync_virtual_mailboxes(output_path=None):
         return len(lines), True
 
     except Exception:
-        if 'temp_path' in locals() and os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-            except Exception:
-                pass
         return len(lines) if 'lines' in locals() else 0, False
