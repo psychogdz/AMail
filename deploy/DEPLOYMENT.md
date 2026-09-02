@@ -1,6 +1,6 @@
 # AMail — Production Deployment & Operations Guide
 
-This guide provides step-by-step instructions for deploying and running **AMail** on an Ubuntu 24.04 LTS VPS with 1 vCPU, 1 GB RAM, and 10 GB SSD for the domain **`viomet.online`** and web application **`https://amail.viomet.online`**.
+This guide provides step-by-step instructions for deploying and running **AMail** on an Ubuntu 24.04 LTS VPS with 1–2 vCPU, 1–2 GB RAM, and 10 GB SSD for the domain **`viomet.online`** and web application **`https://amail.viomet.online`**.
 
 ---
 
@@ -9,11 +9,11 @@ This guide provides step-by-step instructions for deploying and running **AMail*
 AMail is engineered specifically for minimal resource overhead:
 - **Web Server**: Nginx reverse proxy (~10 MB RAM)
 - **Application Server**: Gunicorn with 2 sync workers (~70 MB RAM)
-- **Mail Transfer Agent (MTA)**: Postfix with SQLite lookup maps (~20 MB RAM)
+- **Mail Transfer Agent (MTA)**: Postfix with synchronized native hash lookup tables (~15 MB RAM)
 - **Mail Ingestion**: Standalone Python pipe script (`scripts/ingest_mail.py`, ~9 MB RAM, <30ms execution)
 - **Database**: SQLite 3 with Write-Ahead Logging (WAL mode)
 - **Background Tasks**: Linux native systemd timers (~0 MB persistent overhead)
-- **Total Server Idle RAM**: **~160 – 190 MB RAM** (Leaves >800 MB RAM for system and kernel buffers).
+- **Total Server Idle RAM**: **~140 – 170 MB RAM** (Leaves >800 MB RAM for system and kernel buffers).
 
 ---
 
@@ -34,7 +34,7 @@ Before running the deployment script, configure the following DNS records at you
 
 ---
 
-## 3. Automated Installation (Recommended)
+## 3. Automated One-Command Installation (Recommended)
 
 1. SSH into your VPS as `root`:
    ```bash
@@ -43,18 +43,18 @@ Before running the deployment script, configure the following DNS records at you
 
 2. Clone the repository into `/var/www/amail`:
    ```bash
-   git clone <YOUR_GIT_REPO_URL> /var/www/amail
+   git clone https://github.com/psychogdz/AMail.git /var/www/amail
    cd /var/www/amail
    ```
 
-3. Make scripts executable and run the provisioning script:
+3. Make scripts executable and run the automated installer:
    ```bash
    chmod +x deploy/scripts/*.sh
    sudo ./deploy/scripts/install.sh
    ```
-   *(The installer sets up Nginx in HTTP bootstrap mode, configures Postfix, creates users, initializes SQLite with WAL mode, and enables systemd timers.)*
+   *(The installer sets up Nginx in HTTP bootstrap mode, configures Postfix, creates the dedicated `amail` user, initializes SQLite with WAL mode, synchronizes initial mailboxes, and enables systemd services & timers.)*
 
-4. Create your initial admin account:
+4. Create your initial administrator account:
    ```bash
    sudo -u amail /var/www/amail/venv/bin/python manage.py createsuperuser
    ```
@@ -63,112 +63,27 @@ Before running the deployment script, configure the following DNS records at you
    ```bash
    sudo ./deploy/scripts/setup-ssl.sh your-email@example.com
    ```
-   *(This requests Let's Encrypt certificates for both `amail.viomet.online` and `mail.viomet.online`, grants Postfix read permissions, upgrades Nginx to HTTPS with HSTS, enables STARTTLS in Postfix, and registers the renewal reload hook.)*
+   *(This requests Let's Encrypt certificates for both `amail.viomet.online` and `mail.viomet.online`, configures secure permissions for Postfix, upgrades Nginx to HTTPS with HSTS, enables STARTTLS in Postfix, and registers the renewal reload hook.)*
+
+6. Verify System Health:
+   ```bash
+   sudo ./deploy/scripts/healthcheck.sh
+   ```
 
 ---
 
-## 4. Manual Step-by-Step Installation
+## 4. Postfix Ingestion & Lookup Architecture
 
-If you prefer to deploy step-by-step manually:
+Direct Postfix SQLite lookups (`dict_sqlite_lookup`) frequently fail in production Ubuntu 24.04 environments with `SQL prepare failed: disk I/O error` because:
+1. Postfix lookup daemons (`trivial-rewrite`, `cleanup`) run inside a chroot jail (`/var/spool/postfix`) under strict AppArmor profiles.
+2. SQLite in WAL mode requires atomic shared memory (`-shm`) access and POSIX advisory locking, which cannot safely cross chroot/namespace boundaries and lacks concurrency timeout retries in Postfix's built-in SQLite driver.
+3. Granting the unprivileged `postfix` daemon user broad write permissions to an application directory violates least-privilege security.
 
-### Step 4.1: System Packages & User Setup
-```bash
-sudo apt update && sudo apt install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx postfix postfix-sqlite sqlite3 ufw acl ssl-cert
-
-# Create dedicated application user
-sudo useradd --system --shell /bin/bash --home-dir /var/www/amail amail
-sudo usermod -aG amail www-data
-sudo usermod -aG amail postfix
-```
-
-### Step 4.2: Application Directory & Virtualenv
-```bash
-sudo mkdir -p /var/www/amail /var/log/amail /var/www/certbot
-sudo chown -R amail:amail /var/www/amail /var/log/amail
-
-# Setup venv
-sudo -u amail python3 -m venv /var/www/amail/venv
-sudo -u amail /var/www/amail/venv/bin/pip install --upgrade pip
-sudo -u amail /var/www/amail/venv/bin/pip install -r /var/www/amail/requirements.txt
-```
-
-### Step 4.3: Environment Configuration & Database
-```bash
-# Copy and edit production environment file
-sudo cp /var/www/amail/.env.example /var/www/amail/.env
-sudo nano /var/www/amail/.env
-
-# Run database migrations and collectstatic
-sudo -u amail /var/www/amail/venv/bin/python manage.py migrate
-sudo -u amail /var/www/amail/venv/bin/python manage.py collectstatic --noinput
-
-# Base secure permissions: directories 750, files 640, secret .env 600
-sudo find /var/www/amail -type d -exec chmod 750 {} +
-sudo find /var/www/amail -type f -exec chmod 640 {} +
-sudo chmod 600 /var/www/amail/.env
-sudo chmod 750 /var/www/amail/deploy/scripts/*.sh /var/www/amail/scripts/ingest_mail.py 2>/dev/null || true
-
-# Nginx (www-data): Traversal only on root directory, read-only on staticfiles
-sudo setfacl -m u:www-data:x /var/www/amail
-sudo setfacl -R -m u:www-data:rX /var/www/amail/staticfiles
-sudo setfacl -R -d -m u:www-data:rX /var/www/amail/staticfiles
-
-# Postfix: Traversal on root directory, read-only on SQLite database and read/write on WAL/SHM
-sudo setfacl -m u:postfix:x /var/www/amail
-sudo setfacl -m u:postfix:r /var/www/amail/db.sqlite3
-sudo setfacl -m u:postfix:rw /var/www/amail/db.sqlite3* 2>/dev/null || true
-```
-
-### Step 4.4: Postfix Setup
-```bash
-# Copy lookup maps
-sudo cp /var/www/amail/deploy/postfix/sqlite-virtual-*.cf /etc/postfix/
-sudo chmod 640 /etc/postfix/sqlite-virtual-*.cf
-sudo chown root:postfix /etc/postfix/sqlite-virtual-*.cf
-
-# Configure master.cf & main.cf
-sudo cat /var/www/amail/deploy/postfix/master.cf.snippet >> /etc/postfix/master.cf
-sudo cat /var/www/amail/deploy/postfix/main.cf.snippet >> /etc/postfix/main.cf
-
-# Initial fallback snakeoil TLS certificate (prevents startup failures before Certbot runs)
-sudo postconf -e "smtpd_tls_cert_file = /etc/ssl/certs/ssl-cert-snakeoil.pem"
-sudo postconf -e "smtpd_tls_key_file = /etc/ssl/private/ssl-cert-snakeoil.key"
-
-sudo systemctl restart postfix
-```
-
-### Step 4.5: Gunicorn & Systemd Services
-```bash
-sudo cp /var/www/amail/deploy/systemd/amail.service /etc/systemd/system/
-sudo cp /var/www/amail/deploy/systemd/amail-cleanup.service /etc/systemd/system/
-sudo cp /var/www/amail/deploy/systemd/amail-cleanup.timer /etc/systemd/system/
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now amail.service
-sudo systemctl enable --now amail-cleanup.timer
-```
-
-### Step 4.6: Nginx HTTP Bootstrap & Firewall
-```bash
-# Install HTTP bootstrap config
-sudo cp /var/www/amail/deploy/nginx/amail-http.conf /etc/nginx/sites-available/amail.conf
-sudo ln -sf /etc/nginx/sites-available/amail.conf /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
-
-# Firewall (UFW)
-sudo ufw allow 22/tcp comment 'SSH'
-sudo ufw allow 80/tcp comment 'HTTP'
-sudo ufw allow 443/tcp comment 'HTTPS'
-sudo ufw allow 25/tcp comment 'SMTP'
-sudo ufw enable
-```
-
-### Step 4.7: SSL Provisioning & HTTPS Activation
-```bash
-# Run the SSL setup helper
-sudo /var/www/amail/deploy/scripts/setup-ssl.sh your-email@example.com
-```
+### The Solution: Native Postfix Hash Maps
+- **Virtual Mailbox Domains**: Defined directly in Postfix `main.cf` (`virtual_mailbox_domains = viomet.online`).
+- **Virtual Mailbox Maps**: Postfix queries `/etc/postfix/virtual_mailboxes.db` via `hash:/etc/postfix/virtual_mailboxes` with microsecond latency and zero database contention.
+- **Automated Synchronization**: Whenever an address is created, updated, toggled, or deleted in the AMail web interface, a Django signal updates `/etc/postfix/virtual_mailboxes` and compiles it with `postmap`.
+- **Mail Piped Delivery**: Valid incoming messages are passed to `amail_pipe` which executes `scripts/ingest_mail.py` under `user=amail:amail`.
 
 ---
 
@@ -177,7 +92,8 @@ sudo /var/www/amail/deploy/scripts/setup-ssl.sh your-email@example.com
 AMail integrates directly with Certbot's systemd timer (`certbot.timer`).
 
 A renewal deploy hook is automatically placed at `/etc/letsencrypt/renewal-hooks/deploy/amail-reload.sh`:
-- Ensures the `postfix` daemon user retains read access to renewed certificate keys via POSIX ACLs.
+- Enforces secure permissions on private keys (`0600 root:root`).
+- Grants read-only traversal and key access strictly to the `postfix` user via POSIX ACLs (`setfacl -m u:postfix:r`).
 - Safely reloads Nginx (`systemctl reload nginx`).
 - Safely reloads Postfix (`systemctl reload postfix`).
 
@@ -188,10 +104,13 @@ sudo certbot renew --dry-run
 
 ---
 
-## 6. Verification & Testing
+## 6. Verification & Operations
 
-### 1. Web Application Check
-Open `https://amail.viomet.online` in your web browser. You should see the login page with HTTPS enabled and dark theme styling.
+### 1. Healthcheck Script
+Run the automated system health check:
+```bash
+sudo /var/www/amail/deploy/scripts/healthcheck.sh
+```
 
 ### 2. Postfix Recipient Rejection Test (SMTP Boundary)
 Test that unknown recipients are rejected with `550 User unknown` directly at the SMTP handshake:
@@ -205,9 +124,8 @@ QUIT
 ```
 
 ### 3. Inbound Mail Ingestion Test
-Create an active address (e.g. `netflix@viomet.online`) in the AMail web interface, then send a test email using `swaks` or from an external email provider (e.g. Gmail):
+Create an active address (e.g. `netflix@viomet.online`) in the AMail web interface, then send a test email using CLI:
 ```bash
-# Using CLI management command test:
 python manage.py ingest_email --recipient netflix@viomet.online --file test_email.eml
 ```
 Check `https://amail.viomet.online/inbox/` to view the received email.

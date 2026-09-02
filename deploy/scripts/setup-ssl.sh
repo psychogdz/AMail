@@ -13,11 +13,14 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-APP_DIR="/var/www/amail"
-DOMAIN="viomet.online"
-WEB_SUBDOMAIN="amail.${DOMAIN}"
-MAIL_HOSTNAME="mail.${DOMAIN}"
-CERT_NAME="amail.${DOMAIN}"
+APP_DIR="${APP_DIRECTORY:-/var/www/amail}"
+if [[ -f "${APP_DIR}/.env" ]]; then
+    DOMAIN_FROM_ENV=$(grep -E '^EMAIL_DOMAIN=' "${APP_DIR}/.env" | cut -d '=' -f2- | tr -d ' "' || true)
+fi
+DOMAIN="${DOMAIN_FROM_ENV:-${EMAIL_DOMAIN:-viomet.online}}"
+WEB_SUBDOMAIN="${WEB_DOMAIN:-amail.${DOMAIN}}"
+MAIL_HOSTNAME="${MAIL_HOST:-mail.${DOMAIN}}"
+CERT_NAME="${WEB_SUBDOMAIN}"
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }

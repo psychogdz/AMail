@@ -11,6 +11,7 @@ import io
 import re
 import os
 import tempfile
+import sqlite3
 from email.message import EmailMessage as PyEmailMessage
 from apps.mailboxes.models import Category, EmailAddress, EmailMessage
 from apps.mailboxes.generator import (
@@ -901,3 +902,189 @@ class ValidationTests(TestCase):
 
         response = self._create_address('b' * 65)
         self.assertEqual(response.status_code, 200)
+
+
+class EmailDisplayRegressionTests(TestCase):
+    """
+    Regression tests proving that received emails are correctly displayed
+    with their categories, mailboxes, senders, subjects, dates, and read states.
+    """
+    def setUp(self):
+        self.user = User.objects.create_user(username='displayuser', password='password')
+        self.client = Client()
+        self.client.login(username='displayuser', password='password')
+
+        self.category = Category.objects.create(user=self.user, name='Finance')
+        self.addr_cat = EmailAddress.objects.create(
+            user=self.user,
+            local_part='bank',
+            domain='viomet.online',
+            category=self.category
+        )
+        self.addr_nocat = EmailAddress.objects.create(
+            user=self.user,
+            local_part='random',
+            domain='viomet.online',
+            category=None
+        )
+
+        self.email_cat = EmailMessage.objects.create(
+            email_address=self.addr_cat,
+            recipient='bank@viomet.online',
+            sender='Bank <alerts@bank.com>',
+            sender_name='Bank',
+            sender_email='alerts@bank.com',
+            subject='Monthly Statement Ready',
+            body_plain='Your bank statement is available.',
+            is_read=False
+        )
+
+        self.email_nocat = EmailMessage.objects.create(
+            email_address=self.addr_nocat,
+            recipient='random@viomet.online',
+            sender='Newsletter <news@example.com>',
+            sender_name='Newsletter',
+            sender_email='news@example.com',
+            subject='Weekly Digest',
+            body_plain='Check out our latest news.',
+            is_read=True
+        )
+
+    def test_inbox_displays_categories_and_mailboxes(self):
+        response = self.client.get(reverse('mailboxes:inbox'))
+        self.assertEqual(response.status_code, 200)
+
+        # Content must contain category names and mailboxes
+        self.assertContains(response, 'Monthly Statement Ready')
+        self.assertContains(response, 'Finance')
+        self.assertContains(response, 'bank@viomet.online')
+
+        self.assertContains(response, 'Weekly Digest')
+        self.assertContains(response, 'random@viomet.online')
+
+    def test_inbox_filter_uncategorized(self):
+        # Filtering for uncategorized
+        response = self.client.get(reverse('mailboxes:inbox'), {'category': 'none'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Weekly Digest')
+        self.assertNotContains(response, 'Monthly Statement Ready')
+
+    def test_inbox_filter_by_mailbox(self):
+        # Filtering by mailbox
+        response = self.client.get(reverse('mailboxes:inbox'), {'address': self.addr_cat.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Monthly Statement Ready')
+        self.assertNotContains(response, 'Weekly Digest')
+
+    def test_dashboard_displays_recent_emails_with_categories(self):
+        response = self.client.get(reverse('core:dashboard'))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('recent_emails', response.context)
+        self.assertEqual(len(response.context['recent_emails']), 2)
+
+        # Must render the email details and category badge on dashboard
+        self.assertContains(response, 'Recent Received Emails')
+        self.assertContains(response, 'Monthly Statement Ready')
+        self.assertContains(response, 'Finance')
+        self.assertContains(response, 'bank@viomet.online')
+
+    def test_address_detail_displays_received_emails(self):
+        response = self.client.get(reverse('mailboxes:address_detail', args=[self.addr_cat.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('recent_emails', response.context)
+        self.assertEqual(len(response.context['recent_emails']), 1)
+
+        self.assertContains(response, 'Received Messages')
+        self.assertContains(response, 'Monthly Statement Ready')
+        self.assertContains(response, 'Finance')
+
+
+class PostfixMapSyncTests(TestCase):
+    """
+    Tests for Postfix virtual mailbox map synchronization.
+    """
+    def setUp(self):
+        self.user = User.objects.create_user(username='syncuser', password='password')
+        self.addr1 = EmailAddress.objects.create(user=self.user, local_part='sync1', domain='viomet.online')
+        self.addr2 = EmailAddress.objects.create(user=self.user, local_part='sync2', domain='viomet.online', is_active=False)
+
+    def test_sync_virtual_mailboxes_file_output(self):
+        from apps.mailboxes.sync import sync_virtual_mailboxes
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_map = os.path.join(temp_dir, 'virtual_mailboxes')
+            count, _ = sync_virtual_mailboxes(output_path=temp_map)
+
+            self.assertTrue(os.path.exists(temp_map))
+            with open(temp_map, 'r', encoding='utf-8') as f:
+                content = f.read()
+
+            self.assertIn('sync1@viomet.online OK', content)
+            # Inactive address must be excluded
+            self.assertNotIn('sync2@viomet.online', content)
+
+    def test_sync_postfix_maps_management_command(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_map = os.path.join(temp_dir, 'virtual_mailboxes')
+            call_command('sync_postfix_maps', output=temp_map)
+
+            self.assertTrue(os.path.exists(temp_map))
+            with open(temp_map, 'r', encoding='utf-8') as f:
+                content = f.read()
+            self.assertIn('sync1@viomet.online OK', content)
+
+
+class IngestionSubaddressingTests(TestCase):
+    """
+    Tests proving that email ingestion handles subaddressing / plus-tags.
+    """
+    def setUp(self):
+        self.user = User.objects.create_user(username='subaddruser', password='password')
+        self.addr = EmailAddress.objects.create(user=self.user, local_part='service', domain='viomet.online')
+        self.raw_conn = connection.connection
+
+    def tearDown(self):
+        pass
+
+    def test_ingest_plus_tag_subaddressing(self):
+        from scripts.ingest_mail import ingest, EX_OK
+        raw = (
+            b"From: service@example.com\r\n"
+            b"To: service+newsletter@viomet.online\r\n"
+            b"Subject: Subaddress Test\r\n"
+            b"\r\n"
+            b"Body for subaddress"
+        )
+        status = ingest(raw, cli_recipient="service+newsletter@viomet.online", conn=self.raw_conn)
+        self.assertEqual(status, EX_OK)
+
+        msg = EmailMessage.objects.filter(email_address=self.addr, subject="Subaddress Test").first()
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.recipient, "service+newsletter@viomet.online")
+        self.assertEqual(msg.email_address, self.addr)
+
+    def test_ingest_missing_subject(self):
+        from scripts.ingest_mail import ingest, EX_OK
+        raw = b"From: sender@example.com\r\nTo: service@viomet.online\r\n\r\nBody without subject header"
+        status = ingest(raw, cli_recipient="service@viomet.online", conn=self.raw_conn)
+        self.assertEqual(status, EX_OK)
+        msg = EmailMessage.objects.filter(email_address=self.addr, recipient="service@viomet.online").order_by('-created_at').first()
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.subject, "(No Subject)")
+
+    def test_ingest_unusual_sender(self):
+        from scripts.ingest_mail import ingest, EX_OK
+        raw = b"From: Invalid-Sender-Without-Angle-Brackets\r\nTo: service@viomet.online\r\nSubject: Unusual\r\n\r\nTest"
+        status = ingest(raw, cli_recipient="service@viomet.online", conn=self.raw_conn)
+        self.assertEqual(status, EX_OK)
+        msg = EmailMessage.objects.filter(email_address=self.addr, subject="Unusual").first()
+        self.assertIsNotNone(msg)
+        self.assertIn("Invalid-Sender", msg.sender)
+
+    def test_ingest_multiple_recipients_in_header(self):
+        from scripts.ingest_mail import ingest, EX_OK
+        raw = b"From: sender@example.com\r\nTo: first@other.com, service@viomet.online\r\nSubject: Multiple\r\n\r\nTest"
+        status = ingest(raw, cli_recipient="service@viomet.online", conn=self.raw_conn)
+        self.assertEqual(status, EX_OK)
+        msg = EmailMessage.objects.filter(email_address=self.addr, subject="Multiple").first()
+        self.assertIsNotNone(msg)
+        self.assertEqual(msg.recipient, "service@viomet.online")

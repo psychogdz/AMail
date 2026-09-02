@@ -157,9 +157,11 @@ def address_generate_api(request):
 def address_detail(request, pk):
     address = get_object_or_404(EmailAddress, pk=pk, user=request.user)
     categories = Category.objects.filter(user=request.user)
+    recent_emails = address.emails.select_related('email_address', 'email_address__category')[:10]
     return render(request, 'mailboxes/address_detail.html', {
         'address': address,
         'categories': categories,
+        'recent_emails': recent_emails,
     })
 
 
@@ -218,17 +220,28 @@ def inbox_list(request):
     """
     Inbox view showing list of received emails with filtering, search, and pagination.
     """
-    queryset = EmailMessage.objects.filter(email_address__user=request.user).select_related('email_address', 'email_address__category')
+    queryset = EmailMessage.objects.filter(
+        email_address__user=request.user
+    ).select_related('email_address', 'email_address__category')
 
     # Filter by category
     category_id = request.GET.get('category')
     if category_id:
-        queryset = queryset.filter(email_address__category_id=category_id)
+        if str(category_id).lower() in ('none', 'uncategorized'):
+            queryset = queryset.filter(email_address__category__isnull=True)
+        else:
+            try:
+                queryset = queryset.filter(email_address__category_id=int(category_id))
+            except (ValueError, TypeError):
+                pass
 
     # Filter by specific email address
     address_id = request.GET.get('address')
     if address_id:
-        queryset = queryset.filter(email_address_id=address_id)
+        try:
+            queryset = queryset.filter(email_address_id=int(address_id))
+        except (ValueError, TypeError):
+            pass
 
     # Filter by read status
     status_filter = request.GET.get('status')
@@ -246,7 +259,9 @@ def inbox_list(request):
             Q(sender_email__icontains=search_query) |
             Q(sender_name__icontains=search_query) |
             Q(recipient__icontains=search_query) |
-            Q(body_plain__icontains=search_query)
+            Q(body_plain__icontains=search_query) |
+            Q(email_address__local_part__icontains=search_query) |
+            Q(email_address__category__name__icontains=search_query)
         )
 
     paginator = Paginator(queryset, 20)

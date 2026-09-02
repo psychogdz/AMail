@@ -93,6 +93,16 @@
     .email-subject:hover {
         text-decoration: underline;
     }
+    .badge-category {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.78rem;
+        font-weight: 500;
+        background-color: var(--bg-tertiary);
+        color: var(--accent);
+        border: 1px solid var(--border-color);
+    }
 </style>
 
 <div class="inbox-header">
@@ -115,30 +125,50 @@
         {% if current_category %}<input type="hidden" name="category" value="{{ current_category }}">{% endif %}
         {% if current_address %}<input type="hidden" name="address" value="{{ current_address }}">{% endif %}
         {% if current_status %}<input type="hidden" name="status" value="{{ current_status }}">{% endif %}
-        <input type="text" name="q" class="form-input" placeholder="Search by subject, sender, body, or recipient..." value="{{ search_query }}" style="flex-grow: 1;">
+        <input type="text" name="q" class="form-input" placeholder="Search by subject, sender, body, category, or recipient..." value="{{ search_query }}" style="flex-grow: 1;">
         <button type="submit" class="btn btn-primary">Search</button>
         {% if search_query %}
-        <a href="{% url 'mailboxes:inbox' %}{% if current_category %}?category={{ current_category }}{% endif %}" class="btn btn-ghost">Clear</a>
+        <a href="{% url 'mailboxes:inbox' %}{% if current_category %}?category={{ current_category }}{% endif %}{% if current_address %}&address={{ current_address }}{% endif %}" class="btn btn-ghost">Clear</a>
         {% endif %}
     </form>
 
-    <!-- Filter Pills -->
+    <!-- Filter Pills: Status -->
     <div class="filters-row">
         <span class="text-secondary" style="font-size: 0.85rem; font-weight: 500;">Status:</span>
-        <a href="{% url 'mailboxes:inbox' %}{% if search_query %}?q={{ search_query }}{% endif %}" class="filter-pill {% if not current_status %}active{% endif %}">All</a>
-        <a href="{% url 'mailboxes:inbox' %}?status=unread{% if search_query %}&q={{ search_query }}{% endif %}" class="filter-pill {% if current_status == 'unread' %}active{% endif %}">Unread</a>
-        <a href="{% url 'mailboxes:inbox' %}?status=read{% if search_query %}&q={{ search_query }}{% endif %}" class="filter-pill {% if current_status == 'read' %}active{% endif %}">Read</a>
+        <a href="{% url 'mailboxes:inbox' %}?{% if current_category %}category={{ current_category }}&{% endif %}{% if current_address %}address={{ current_address }}&{% endif %}{% if search_query %}q={{ search_query }}{% endif %}" class="filter-pill {% if not current_status %}active{% endif %}">All</a>
+        <a href="{% url 'mailboxes:inbox' %}?status=unread{% if current_category %}&category={{ current_category }}{% endif %}{% if current_address %}&address={{ current_address }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="filter-pill {% if current_status == 'unread' %}active{% endif %}">Unread</a>
+        <a href="{% url 'mailboxes:inbox' %}?status=read{% if current_category %}&category={{ current_category }}{% endif %}{% if current_address %}&address={{ current_address }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="filter-pill {% if current_status == 'read' %}active{% endif %}">Read</a>
 
+        <!-- Filter Pills: Category -->
         {% if categories %}
-        <span class="text-secondary ml-2" style="font-size: 0.85rem; font-weight: 500;">Category:</span>
+        <span class="text-secondary ml-3" style="font-size: 0.85rem; font-weight: 500;">Category:</span>
+        <a href="{% url 'mailboxes:inbox' %}?{% if current_status %}status={{ current_status }}&{% endif %}{% if current_address %}address={{ current_address }}&{% endif %}{% if search_query %}q={{ search_query }}{% endif %}" class="filter-pill {% if not current_category %}active{% endif %}">All</a>
         {% for cat in categories %}
-        <a href="{% url 'mailboxes:inbox' %}?category={{ cat.pk }}{% if current_status %}&status={{ current_status }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" 
+        <a href="{% url 'mailboxes:inbox' %}?category={{ cat.pk }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_address %}&address={{ current_address }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" 
            class="filter-pill {% if current_category == cat.pk|stringformat:'s' %}active{% endif %}">
            {{ cat.name }}
         </a>
         {% endfor %}
+        <a href="{% url 'mailboxes:inbox' %}?category=none{% if current_status %}&status={{ current_status }}{% endif %}{% if current_address %}&address={{ current_address }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" 
+           class="filter-pill {% if current_category == 'none' %}active{% endif %}">
+           Uncategorized
+        </a>
         {% endif %}
     </div>
+
+    <!-- Filter Pills: Mailbox / Address -->
+    {% if addresses and addresses.count > 1 %}
+    <div class="filters-row">
+        <span class="text-secondary" style="font-size: 0.85rem; font-weight: 500;">Mailbox:</span>
+        <a href="{% url 'mailboxes:inbox' %}?{% if current_status %}status={{ current_status }}&{% endif %}{% if current_category %}category={{ current_category }}&{% endif %}{% if search_query %}q={{ search_query }}{% endif %}" class="filter-pill {% if not current_address %}active{% endif %}">All</a>
+        {% for addr in addresses %}
+        <a href="{% url 'mailboxes:inbox' %}?address={{ addr.pk }}{% if current_status %}&status={{ current_status }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" 
+           class="filter-pill {% if current_address == addr.pk|stringformat:'s' %}active{% endif %}">
+           {{ addr.local_part }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
 </div>
 
 {% if page_obj.paginator.count > 0 %}
@@ -172,7 +202,8 @@
                         <th style="padding: 12px 16px; width: 36px;"></th>
                         <th style="padding: 12px 16px;">Sender</th>
                         <th style="padding: 12px 16px;">Subject</th>
-                        <th style="padding: 12px 16px;">Recipient</th>
+                        <th style="padding: 12px 16px;">Mailbox</th>
+                        <th style="padding: 12px 16px;">Category</th>
                         <th style="padding: 12px 16px;">Date</th>
                         <th style="padding: 12px 16px; text-align: right;">Actions</th>
                     </tr>
@@ -187,20 +218,27 @@
                             {% if not email.is_read %}
                             <span class="unread-indicator" title="Unread"></span>
                             {% endif %}
-                            {{ email.sender_name|default:email.sender|truncatechars:28 }}
+                            {{ email.sender_name|default:email.sender|truncatechars:26 }}
                         </td>
                         <td style="padding: 12px 16px;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
                             <a href="{% url 'mailboxes:email_detail' pk=email.pk %}" class="email-subject">
-                                {{ email.subject|truncatechars:50 }}
+                                {{ email.subject|truncatechars:45 }}
                             </a>
                             {% if email.has_attachments %}
                             <span title="Has attachments" style="font-size: 0.9rem; margin-left: 4px;">📎</span>
                             {% endif %}
                         </td>
                         <td style="padding: 12px 16px;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
-                            <span class="badge" style="font-family: monospace; font-size: 0.8rem; background: var(--bg-tertiary); color: var(--text-primary);">
-                                {{ email.recipient }}
+                            <span class="badge" style="font-family: monospace; font-size: 0.8rem; background: var(--bg-tertiary); color: var(--text-primary);" title="{{ email.mailbox }}">
+                                {{ email.mailbox }}
                             </span>
+                        </td>
+                        <td style="padding: 12px 16px;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
+                            {% if email.category %}
+                            <span class="badge-category">{{ email.category.name }}</span>
+                            {% else %}
+                            <span class="text-secondary" style="font-size: 0.8rem;">—</span>
+                            {% endif %}
                         </td>
                         <td style="padding: 12px 16px; white-space: nowrap; font-size: 0.85rem;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
                             {{ email.created_at|date:'M d, H:i' }}
@@ -229,19 +267,19 @@
 {% if page_obj.has_other_pages %}
 <div class="pagination mt-lg">
     {% if page_obj.has_previous %}
-    <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">&laquo; Prev</a>
+    <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_address %}&address={{ current_address }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">&laquo; Prev</a>
     {% endif %}
     
     {% for num in page_obj.paginator.page_range %}
         {% if page_obj.number == num %}
         <span class="page-link active">{{ num }}</span>
         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-        <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">{{ num }}</a>
+        <a href="?page={{ num }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_address %}&address={{ current_address }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">{{ num }}</a>
         {% endif %}
     {% endfor %}
 
     {% if page_obj.has_next %}
-    <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">Next &raquo;</a>
+    <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&q={{ search_query }}{% endif %}{% if current_category %}&category={{ current_category }}{% endif %}{% if current_address %}&address={{ current_address }}{% endif %}{% if current_status %}&status={{ current_status }}{% endif %}" class="page-link">Next &raquo;</a>
     {% endif %}
 </div>
 {% endif %}
@@ -253,11 +291,13 @@
     <p class="text-secondary" style="margin-bottom: 24px;">
         {% if search_query %}
         No messages matched your search query "{{ search_query }}".
+        {% elif current_category or current_address or current_status %}
+        No messages matched the selected filters.
         {% else %}
         Your inbox is currently empty. Incoming emails sent to your active addresses will appear here.
         {% endif %}
     </p>
-    {% if search_query or current_status or current_category %}
+    {% if search_query or current_status or current_category or current_address %}
     <a href="{% url 'mailboxes:inbox' %}" class="btn btn-ghost">Reset Filters</a>
     {% else %}
     <a href="{% url 'mailboxes:address_create' %}" class="btn btn-primary">Create an Email Address</a>

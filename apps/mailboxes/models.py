@@ -91,5 +91,13 @@ class EmailMessage(models.Model):
             models.Index(fields=['email_address', '-created_at']),
         ]
 
+    @property
+    def category(self):
+        return self.email_address.category if self.email_address else None
+
+    @property
+    def mailbox(self):
+        return self.email_address.address if self.email_address else self.recipient
+
     def __str__(self):
         return f"{self.subject} ({self.recipient})"

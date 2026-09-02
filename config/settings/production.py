@@ -31,3 +31,6 @@ SECURE_HSTS_PRELOAD = True
 site_url = os.environ.get('SITE_URL', 'https://amail.viomet.online')
 if site_url:
     CSRF_TRUSTED_ORIGINS = [url.strip() for url in site_url.split(',') if url.strip()]
+
+# X_FRAME_OPTIONS is intentionally SAMEORIGIN to allow AMail's secure iframe email viewer.
+SILENCED_SYSTEM_CHECKS = ['security.W019']

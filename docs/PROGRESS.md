@@ -262,4 +262,43 @@ ValidationTests (4):
   ✓ test_invalid_local_parts
   ✓ test_reserved_addresses
   ✓ test_max_length
+
+EmailDisplayRegressionTests (5):
+  ✓ test_inbox_displays_categories_and_mailboxes
+  ✓ test_inbox_filter_uncategorized
+  ✓ test_inbox_filter_by_mailbox
+  ✓ test_dashboard_displays_recent_emails_with_categories
+  ✓ test_address_detail_displays_received_emails
+
+PostfixMapSyncTests (2):
+  ✓ test_sync_virtual_mailboxes_file_output
+  ✓ test_sync_postfix_maps_management_command
+
+IngestionSubaddressingTests (4):
+  ✓ test_ingest_plus_tag_subaddressing
+  ✓ test_ingest_missing_subject
+  ✓ test_ingest_unusual_sender
+  ✓ test_ingest_multiple_recipients_in_header
 ```
+
+---
+
+## Production Deployment Hardening & Bug Fixes
+**Status**: ✅ Complete
+
+### Completed
+- [x] Fixed Postfix trivial-rewrite `fatal: dict_sqlite_lookup: SQL prepare failed: disk I/O error?` by redesigning recipient verification from direct SQLite to synchronized native Postfix hash maps (`hash:/etc/postfix/virtual_mailboxes`).
+- [x] Created `apps/mailboxes/sync.py` and management command `sync_postfix_maps` to export active mailboxes and compile with `postmap`.
+- [x] Connected Django signals (`post_save`, `post_delete` on `EmailAddress`) for real-time map compilation on mailbox changes.
+- [x] Fixed email display bug across the application:
+  - Added **Category** column with styled category badges in `templates/mailboxes/inbox.html`.
+  - Added **Mailbox** column in inbox table.
+  - Added "Uncategorized" filter pill and mailbox filter pills to inbox.
+  - Added "Recent Received Emails" section to `templates/core/dashboard.html` showing categories, mailboxes, senders, subjects, dates, and read states.
+  - Added "Received Messages" section to `templates/mailboxes/address_detail.html`.
+- [x] Enhanced `scripts/ingest_mail.py` with subaddressing / plus-addressing support (e.g. `user+tag@domain`).
+- [x] Built fully automated one-command installer `deploy/scripts/install.sh` for fresh Ubuntu 24.04 LTS installations.
+- [x] Built production health check script `deploy/scripts/healthcheck.sh`.
+- [x] Added 11 new automated regression tests (101 total tests passing).
+- [x] Production deployment check (`check --deploy`) verified with 0 errors and 0 unhandled warnings.
+

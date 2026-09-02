@@ -209,6 +209,16 @@ def ingest(raw_bytes, cli_recipient=None, db_path=None, conn=None):
         """, (local_part, domain))
         row = cursor.fetchone()
 
+        if not row and '+' in local_part:
+            # Subaddressing support: netflix+tag@domain -> netflix@domain
+            base_local_part = local_part.split('+', 1)[0]
+            cursor.execute("""
+                SELECT id, is_active FROM mailboxes_emailaddress 
+                WHERE lower(local_part) = lower(?) AND lower(domain) = lower(?)
+                LIMIT 1
+            """, (base_local_part, domain))
+            row = cursor.fetchone()
+
         if not row:
             # Fallback: match by local_part alone if domain lookup was partial
             cursor.execute("""
@@ -216,6 +226,15 @@ def ingest(raw_bytes, cli_recipient=None, db_path=None, conn=None):
                 WHERE lower(local_part) = lower(?)
                 LIMIT 1
             """, (local_part,))
+            row = cursor.fetchone()
+
+        if not row and '+' in local_part:
+            base_local_part = local_part.split('+', 1)[0]
+            cursor.execute("""
+                SELECT id, is_active FROM mailboxes_emailaddress 
+                WHERE lower(local_part) = lower(?)
+                LIMIT 1
+            """, (base_local_part,))
             row = cursor.fetchone()
 
         if not row:
@@ -231,7 +250,7 @@ def ingest(raw_bytes, cli_recipient=None, db_path=None, conn=None):
                 conn.close()
             return EX_UNAVAILABLE
 
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        now_iso = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S.%f')
 
         # Insert email record into mailboxes_emailmessage
         cursor.execute("""

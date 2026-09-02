@@ -110,3 +110,5 @@ RESERVED_EMAIL_ADDRESSES = [
     'mailer-daemon', 'noreply', 'no-reply', 'info', 'support', 'security',
     'www', 'mail', 'ftp', 'spam'
 ]
+
+POSTFIX_VIRTUAL_MAILBOXES_FILE = os.environ.get('POSTFIX_VIRTUAL_MAILBOXES_FILE', '/etc/postfix/virtual_mailboxes')

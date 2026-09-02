@@ -83,6 +83,57 @@
     </div>
 </div>
 
+<div class="card mb-lg">
+    <div class="flex" style="justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <h2 style="margin: 0; font-size: 1.25rem;">Received Messages</h2>
+        <a href="{% url 'mailboxes:inbox' %}?address={{ address.pk }}" class="btn btn-ghost btn-sm">Filter in Inbox &rarr;</a>
+    </div>
+
+    {% if recent_emails %}
+    <div class="table-responsive">
+        <table class="w-full" style="text-align: left; border-collapse: collapse;">
+            <thead>
+                <tr style="border-bottom: 1px solid var(--border-color); background-color: var(--bg-tertiary);">
+                    <th style="padding: 10px 14px;">Sender</th>
+                    <th style="padding: 10px 14px;">Subject</th>
+                    <th style="padding: 10px 14px;">Category</th>
+                    <th style="padding: 10px 14px;">Received</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for email in recent_emails %}
+                <tr style="border-bottom: 1px solid var(--border-color); cursor: pointer;" onclick="window.location.href='{% url 'mailboxes:email_detail' pk=email.pk %}';">
+                    <td style="padding: 10px 14px;">
+                        {% if not email.is_read %}
+                        <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background-color: var(--accent); margin-right: 6px;"></span>
+                        {% endif %}
+                        {{ email.sender_name|default:email.sender|truncatechars:26 }}
+                    </td>
+                    <td style="padding: 10px 14px;">
+                        <a href="{% url 'mailboxes:email_detail' pk=email.pk %}" style="color: var(--text-primary); text-decoration: none; font-weight: {% if not email.is_read %}600{% else %}normal{% endif %};">
+                            {{ email.subject|truncatechars:45 }}
+                        </a>
+                    </td>
+                    <td style="padding: 10px 14px;">
+                        {% if email.category %}
+                        <span class="badge" style="background-color: var(--bg-tertiary); color: var(--accent); border: 1px solid var(--border-color); font-size: 0.78rem;">{{ email.category.name }}</span>
+                        {% else %}
+                        <span class="text-secondary" style="font-size: 0.8rem;">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="padding: 10px 14px; white-space: nowrap; font-size: 0.85rem; color: var(--text-secondary);">
+                        {{ email.created_at|date:'M d, H:i' }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-secondary" style="margin: 0; padding: 8px 0;">No emails received at this address yet.</p>
+    {% endif %}
+</div>
+
 <script>
 function copyAddress(addr) {
   navigator.clipboard.writeText(addr).then(() => {

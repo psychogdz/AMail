@@ -11,9 +11,10 @@ inet_protocols = ipv4
 # Important: viomet.online must NOT be in mydestination when using virtual domains
 mydestination = localhost.$mydomain, localhost
 
-# SQLite Virtual Domain and Mailbox recipient lookups
-virtual_mailbox_domains = sqlite:/etc/postfix/sqlite-virtual-domains.cf
-virtual_mailbox_maps = sqlite:/etc/postfix/sqlite-virtual-mailboxes.cf
+# Virtual Domain and Mailbox recipient lookups
+# Native Postfix hash map synchronized from AMail: zero SQLite locking / chroot / AppArmor friction
+virtual_mailbox_domains = viomet.online
+virtual_mailbox_maps = hash:/etc/postfix/virtual_mailboxes
 virtual_transport = amail_pipe
 
 # Reject unlisted recipients at SMTP boundary (Anti-Backscatter & Spam protection)
