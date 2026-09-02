@@ -58,6 +58,8 @@ Configure the following records at your domain registrar/DNS provider:
 On a fresh Ubuntu 24.04 LTS server:
 
 ```bash
+sudo apt update
+sudo apt install git -y
 git clone https://github.com/psychogdz/AMail.git /var/www/amail
 cd /var/www/amail
 chmod +x deploy/scripts/*.sh
