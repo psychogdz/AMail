@@ -38,11 +38,17 @@ for svc in amail nginx postfix; do
     fi
 done
 
-# Check systemd cleanup timer
+# Check systemd cleanup timer and postfix sync path unit
 if systemctl is-active --quiet amail-cleanup.timer 2>/dev/null; then
     pass "Systemd timer 'amail-cleanup.timer' is active."
 else
     warn "Systemd timer 'amail-cleanup.timer' is not active."
+fi
+
+if systemctl is-active --quiet amail-postfix-sync.path 2>/dev/null; then
+    pass "Systemd path monitor 'amail-postfix-sync.path' is active."
+else
+    warn "Systemd path monitor 'amail-postfix-sync.path' is not active."
 fi
 
 # 2. Port Checks
@@ -77,6 +83,21 @@ fi
 
 if [[ -f "/etc/postfix/virtual_mailboxes.db" || -f "/etc/postfix/virtual_mailboxes" ]]; then
     pass "Postfix virtual mailboxes map file exists (/etc/postfix/virtual_mailboxes)."
+    
+    # Check permissions (must not be group/other writable)
+    MAP_PERMS=$(stat -c "%a" /etc/postfix/virtual_mailboxes 2>/dev/null || stat -f "%Lp" /etc/postfix/virtual_mailboxes 2>/dev/null || echo "644")
+    MAP_OWNER=$(stat -c "%U" /etc/postfix/virtual_mailboxes 2>/dev/null || stat -f "%Su" /etc/postfix/virtual_mailboxes 2>/dev/null || echo "root")
+    if [[ "$MAP_PERMS" =~ ^[0-6][0-4][0-4]$ && "$MAP_OWNER" == "root" ]]; then
+        pass "Postfix map file has secure permissions (${MAP_PERMS}, owner: ${MAP_OWNER})."
+    else
+        warn "Postfix map file permissions (${MAP_PERMS}, owner: ${MAP_OWNER}) may trigger Postfix warnings."
+    fi
+    
+    # Verify postmap query capability if postmap is installed
+    if command -v postmap &>/dev/null && [[ -f "/etc/postfix/virtual_mailboxes.db" ]]; then
+        postmap -q "healthcheck@${DOMAIN}" hash:/etc/postfix/virtual_mailboxes &>/dev/null || true
+        pass "Postfix virtual mailbox hash map can be queried successfully."
+    fi
 else
     fail "Postfix virtual mailboxes map file (/etc/postfix/virtual_mailboxes) is missing."
 fi

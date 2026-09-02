@@ -35,7 +35,38 @@ sudo systemctl start amail-cleanup.service
 sudo journalctl -u amail-cleanup.service -n 50 --no-pager
 ```
 
+## Postfix Virtual Mailbox Synchronization (`amail-postfix-sync.path` & `.service`)
+
+To prevent unauthorized root escalation, the Gunicorn application process runs as unprivileged user `amail` with `ProtectSystem=full` (mounting `/etc` read-only). When email addresses are created, toggled, or deleted via the web interface or API:
+1. Django touches `/var/www/amail/run/postfix_sync.trigger`.
+2. Systemd's kernel inotify monitor (`amail-postfix-sync.path`) catches the event (<5ms latency).
+3. Systemd invokes the isolated root oneshot service (`amail-postfix-sync.service`).
+4. The service reads all active addresses from SQLite WAL mode, atomically writes `/etc/postfix/virtual_mailboxes`, compiles it via `/usr/sbin/postmap`, and enforces strict `0644` `root:root` permissions (eliminating Postfix group-writable warnings).
+
+### Installation Instructions
+```bash
+sudo cp /var/www/amail/deploy/systemd/amail-postfix-sync.service /etc/systemd/system/
+sudo cp /var/www/amail/deploy/systemd/amail-postfix-sync.path /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now amail-postfix-sync.path
+```
+
+### Manual Postfix Map Rebuild
+Administrators can manually rebuild the Postfix lookup table at any time:
+```bash
+sudo /var/www/amail/venv/bin/python /var/www/amail/manage.py sync_postfix_maps
+```
+
 ## Management Commands Reference
+
+### Virtual Mailbox Map Synchronization
+```bash
+# Rebuild Postfix lookup table and compile with postmap
+python manage.py sync_postfix_maps
+
+# Silent execution for automated services
+python manage.py sync_postfix_maps --quiet
+```
 
 ### Retention Cleanup
 ```bash

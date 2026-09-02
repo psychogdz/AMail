@@ -1,0 +1,18 @@
+[Unit]
+Description=Synchronize AMail Virtual Mailbox Map for Postfix
+Documentation=https://github.com/psychogdz/AMail
+After=network.target amail.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/var/www/amail
+EnvironmentFile=/var/www/amail/.env
+ExecStart=/var/www/amail/venv/bin/python /var/www/amail/manage.py sync_postfix_maps --quiet
+TimeoutSec=30
+SyslogIdentifier=amail-postfix-sync
+
+# Security Hardening
+PrivateTmp=true
+ProtectHome=true
+NoNewPrivileges=true

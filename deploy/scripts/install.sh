@@ -215,9 +215,15 @@ setfacl -m u:www-data:x "${APP_DIR}" 2>/dev/null || true
 setfacl -R -m u:www-data:rX "${APP_DIR}/staticfiles" 2>/dev/null || true
 setfacl -R -d -m u:www-data:rX "${APP_DIR}/staticfiles" 2>/dev/null || true
 
-# Postfix map permissions
-chown "${APP_USER}:postfix" /etc/postfix/virtual_mailboxes*
-chmod 664 /etc/postfix/virtual_mailboxes*
+# Postfix map permissions (Strict root ownership, 0644 readable by Postfix, 0 warnings)
+touch /etc/postfix/virtual_mailboxes
+chown root:root /etc/postfix/virtual_mailboxes*
+chmod 644 /etc/postfix/virtual_mailboxes*
+
+# Runtime directory for application inotify sync triggers
+mkdir -p "${APP_DIR}/run"
+chown "${APP_USER}:${APP_GROUP}" "${APP_DIR}/run"
+chmod 755 "${APP_DIR}/run"
 
 log_success "Filesystem permissions secured."
 
@@ -238,17 +244,25 @@ nginx -t
 systemctl restart nginx || systemctl reload nginx
 log_success "Nginx reverse proxy configured and active."
 
-# 11. Systemd Services & Cleanup Timer
+# 11. Systemd Services, Cleanup Timer & Postfix Sync Path Unit
 log_info "Installing and enabling systemd units..."
 cp "${APP_DIR}/deploy/systemd/amail.service" /etc/systemd/system/
 cp "${APP_DIR}/deploy/systemd/amail-cleanup.service" /etc/systemd/system/
 cp "${APP_DIR}/deploy/systemd/amail-cleanup.timer" /etc/systemd/system/
+cp "${APP_DIR}/deploy/systemd/amail-postfix-sync.service" /etc/systemd/system/
+cp "${APP_DIR}/deploy/systemd/amail-postfix-sync.path" /etc/systemd/system/
 
 systemctl daemon-reload
 systemctl enable amail.service
 systemctl restart amail.service
 systemctl enable --now amail-cleanup.timer
-log_success "Systemd application service and cleanup timer activated."
+systemctl enable --now amail-postfix-sync.path
+
+# Perform initial virtual mailbox compilation as root
+"${APP_DIR}/venv/bin/python" "${APP_DIR}/manage.py" sync_postfix_maps --quiet || true
+chown root:root /etc/postfix/virtual_mailboxes* 2>/dev/null || true
+chmod 644 /etc/postfix/virtual_mailboxes* 2>/dev/null || true
+log_success "Systemd application service, cleanup timer, and Postfix sync path monitor activated."
 
 # 12. Certbot Auto-Renewal Deploy Hook
 log_info "Configuring Certbot renewal hook..."

@@ -130,16 +130,39 @@ python manage.py ingest_email --recipient netflix@viomet.online --file test_emai
 ```
 Check `https://amail.viomet.online/inbox/` to view the received email.
 
-### 4. Background Timer Check
+### 4. Background Timer & Auto-Sync Path Checks
 ```bash
+# Verify cleanup timer
 systemctl list-timers | grep amail-cleanup
-sudo systemctl start amail-cleanup.service
-sudo journalctl -u amail-cleanup.service -n 20 --no-pager
+
+# Verify Postfix map sync inotify path monitor
+systemctl status amail-postfix-sync.path
+
+# View recent auto-sync executions
+sudo journalctl -u amail-postfix-sync.service -n 20 --no-pager
 ```
 
 ---
 
-## 7. Zero-Downtime Application Updates
+## 7. Postfix Virtual Mailbox Auto-Synchronization Architecture
+
+### Least-Privilege Design
+1. **Web Sandboxing**: The Gunicorn application server runs with `ProtectSystem=full`, rendering `/etc` completely read-only to prevent tampering. The web app process is never granted `sudo` or shell root permissions.
+2. **Inotify Event Trigger**: When an `EmailAddress` is created, updated (`is_active` changed), or deleted:
+   - Django touches `/var/www/amail/run/postfix_sync.trigger`.
+   - The systemd unit `amail-postfix-sync.path` catches the event via Linux kernel inotify (<5ms latency).
+   - Systemd automatically invokes the root-isolated oneshot service `amail-postfix-sync.service`.
+3. **Atomic Compilation**:
+   - `amail-postfix-sync.service` runs `manage.py sync_postfix_maps --quiet`.
+   - Active addresses are exported from SQLite WAL mode.
+   - The map `/etc/postfix/virtual_mailboxes` is atomically replaced and compiled via `postmap`.
+   - File permissions are set to strict `0644 root:root` on both `/etc/postfix/virtual_mailboxes` and `.db`, preventing all Postfix security warnings.
+4. **Manual Map Rebuild**:
+   ```bash
+   sudo /var/www/amail/venv/bin/python /var/www/amail/manage.py sync_postfix_maps
+   ```
+
+## 8. Zero-Downtime Application Updates
 
 To deploy new code updates:
 ```bash
@@ -149,7 +172,7 @@ sudo ./deploy/scripts/update.sh
 
 ---
 
-## 8. SQLite Backup & Maintenance
+## 9. SQLite Backup & Maintenance
 
 Because AMail uses SQLite with WAL mode, online backups can be executed safely without stopping the service:
 ```bash

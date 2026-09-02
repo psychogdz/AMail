@@ -107,8 +107,12 @@ journalctl -u amail -n 50 --no-pager
 # View mail logs
 tail -f /var/log/mail.log
 
-# Manually synchronize Postfix mailboxes map
-sudo -u amail /var/www/amail/venv/bin/python /var/www/amail/manage.py sync_postfix_maps
+# Automatic Postfix synchronization:
+# Email address changes (create, disable, delete, reactivate) automatically trigger
+# Postfix virtual mailbox map updates via systemd inotify monitor (amail-postfix-sync.path).
+#
+# Manually rebuild Postfix mailboxes map at any time (run as root):
+sudo /var/www/amail/venv/bin/python /var/www/amail/manage.py sync_postfix_maps
 
 # Test Postfix mailbox lookup
 postmap -q "netflix@viomet.online" hash:/etc/postfix/virtual_mailboxes

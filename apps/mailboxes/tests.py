@@ -1001,7 +1001,8 @@ class EmailDisplayRegressionTests(TestCase):
 
 class PostfixMapSyncTests(TestCase):
     """
-    Tests for Postfix virtual mailbox map synchronization.
+    Comprehensive tests for Postfix virtual mailbox map synchronization,
+    lifecycle triggers (create, disable, delete, reactivate), and failure resilience.
     """
     def setUp(self):
         self.user = User.objects.create_user(username='syncuser', password='password')
@@ -1025,12 +1026,115 @@ class PostfixMapSyncTests(TestCase):
     def test_sync_postfix_maps_management_command(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_map = os.path.join(temp_dir, 'virtual_mailboxes')
-            call_command('sync_postfix_maps', output=temp_map)
+            call_command('sync_postfix_maps', output=temp_map, quiet=True)
 
             self.assertTrue(os.path.exists(temp_map))
             with open(temp_map, 'r', encoding='utf-8') as f:
                 content = f.read()
             self.assertIn('sync1@viomet.online OK', content)
+
+    def test_address_creation_triggers_sync(self):
+        """Creating an active address automatically triggers synchronization."""
+        from apps.mailboxes.sync import sync_virtual_mailboxes
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_map = os.path.join(temp_dir, 'virtual_mailboxes')
+            with self.settings(POSTFIX_VIRTUAL_MAILBOXES_FILE=temp_map):
+                # Pre-populate map
+                sync_virtual_mailboxes(output_path=temp_map)
+
+                # Create new active address
+                EmailAddress.objects.create(user=self.user, local_part='newcreated', domain='viomet.online', is_active=True)
+
+                self.assertTrue(os.path.exists(temp_map))
+                with open(temp_map, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.assertIn('newcreated@viomet.online OK', content)
+
+    def test_address_disable_triggers_sync(self):
+        """Disabling an active address automatically removes it from the Postfix map."""
+        from apps.mailboxes.sync import sync_virtual_mailboxes
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_map = os.path.join(temp_dir, 'virtual_mailboxes')
+            with self.settings(POSTFIX_VIRTUAL_MAILBOXES_FILE=temp_map):
+                sync_virtual_mailboxes(output_path=temp_map)
+                with open(temp_map, 'r', encoding='utf-8') as f:
+                    self.assertIn('sync1@viomet.online OK', f.read())
+
+                # Disable address
+                self.addr1.is_active = False
+                self.addr1.save()
+
+                with open(temp_map, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.assertNotIn('sync1@viomet.online', content)
+
+    def test_address_delete_triggers_sync(self):
+        """Deleting an address automatically removes it from the Postfix map."""
+        from apps.mailboxes.sync import sync_virtual_mailboxes
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_map = os.path.join(temp_dir, 'virtual_mailboxes')
+            with self.settings(POSTFIX_VIRTUAL_MAILBOXES_FILE=temp_map):
+                sync_virtual_mailboxes(output_path=temp_map)
+                with open(temp_map, 'r', encoding='utf-8') as f:
+                    self.assertIn('sync1@viomet.online OK', f.read())
+
+                # Delete address
+                self.addr1.delete()
+
+                with open(temp_map, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.assertNotIn('sync1@viomet.online', content)
+
+    def test_address_reactivation_triggers_sync(self):
+        """Reactivating a disabled address puts it back into the Postfix map."""
+        from apps.mailboxes.sync import sync_virtual_mailboxes
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_map = os.path.join(temp_dir, 'virtual_mailboxes')
+            with self.settings(POSTFIX_VIRTUAL_MAILBOXES_FILE=temp_map):
+                sync_virtual_mailboxes(output_path=temp_map)
+                with open(temp_map, 'r', encoding='utf-8') as f:
+                    self.assertNotIn('sync2@viomet.online', f.read())
+
+                # Reactivate address
+                self.addr2.is_active = True
+                self.addr2.save()
+
+                with open(temp_map, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                self.assertIn('sync2@viomet.online OK', content)
+
+    def test_notify_postfix_sync_touches_trigger_file(self):
+        """When target map is unprivileged/unwritable, notify_postfix_sync touches the trigger file."""
+        from apps.mailboxes.sync import notify_postfix_sync
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trigger_file = os.path.join(temp_dir, 'run', 'postfix_sync.trigger')
+            dummy_unwritable_map = os.path.join(temp_dir, 'nonexistent_root_dir', 'virtual_mailboxes')
+
+            with self.settings(
+                POSTFIX_VIRTUAL_MAILBOXES_FILE=dummy_unwritable_map,
+                POSTFIX_SYNC_TRIGGER_FILE=trigger_file
+            ):
+                result, success = notify_postfix_sync()
+                self.assertTrue(success)
+                self.assertTrue(os.path.exists(trigger_file))
+
+    def test_sync_failure_does_not_crash_address_operations(self):
+        """Sync failures log errors but do not crash address creation/deletion."""
+        from unittest.mock import patch
+        with patch('apps.mailboxes.sync.notify_postfix_sync', side_effect=RuntimeError("Simulated sync failure")):
+            # Address creation must succeed even if sync raises an exception
+            addr = EmailAddress.objects.create(
+                user=self.user,
+                local_part='resilient',
+                domain='viomet.online'
+            )
+            self.assertTrue(EmailAddress.objects.filter(id=addr.id).exists())
+
+            # Address deletion must also succeed
+            addr.delete()
+            self.assertFalse(EmailAddress.objects.filter(id=addr.id).exists())
 
 
 class IngestionSubaddressingTests(TestCase):
