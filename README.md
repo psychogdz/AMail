@@ -58,11 +58,32 @@ Configure the following records at your domain registrar/DNS provider:
 On a fresh Ubuntu 24.04 LTS server:
 
 ```bash
-sudo apt update
-sudo apt install git -y
-git clone https://github.com/psychogdz/AMail.git /var/www/amail
+# Update system packages
+sudo apt update && sudo apt upgrade -y
+
+# Install required base dependencies
+sudo apt install -y \
+    git \
+    curl \
+    ca-certificates \
+    sudo \
+    nano
+
+# Clone AMail
+sudo mkdir -p /var/www
+
+sudo git clone https://github.com/psychogdz/AMail.git /var/www/amail
+
+# Set ownership
+sudo chown -R $USER:$USER /var/www/amail
+
+# Enter project directory
 cd /var/www/amail
+
+# Make deployment scripts executable
 chmod +x deploy/scripts/*.sh
+
+# Run production installer
 sudo ./deploy/scripts/install.sh
 ```
 
