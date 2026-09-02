@@ -71,6 +71,10 @@ apt-get install -y -qq \
 
 log_success "System packages installed successfully."
 
+# Configure Git defaults to ensure reliable pulls and safe ownership
+git config --global http.version HTTP/1.1 2>/dev/null || true
+git config --global --add safe.directory "${APP_DIR}" 2>/dev/null || true
+
 # 3. Create Dedicated Application User & Directories
 log_info "Configuring service account '${APP_USER}' and application directories..."
 if ! id -u "${APP_USER}" &>/dev/null; then
